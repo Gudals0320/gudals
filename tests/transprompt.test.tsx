@@ -31,6 +31,7 @@ test('stripEmphasis removes bold and italic but keeps bullets and code', () => {
 test('a long voice prompt is held, structured, and sent on approval', { options: { transpromptMinChars: 50 } }, async ($, on) => {
   const sent: string[] = []
   mock.store(on)
+  mock.clock(on)
   on('command.register', () => ({ value: { command: 'transprompt' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.close', () => ({ value: undefined }))
@@ -153,4 +154,90 @@ test('/gudals:transprompt from the skill answers like /transprompt', { options: 
 
   const status = await $.command.run({ command: 'transprompt', args: 'status' })
   expect(status.text).toContain('꺼짐')
+})
+
+const USAGE = { input_tokens: 1, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+
+type Engine = Parameters<Parameters<typeof test>[1]>[0]
+type On = Parameters<Parameters<typeof test>[1]>[1]
+
+// 음성 프롬프트를 붙잡아 구조화를 시작시킨다. 미리보기 패널은 각 테스트가 그린다.
+async function holdVoicePrompt($: Engine, on: On) {
+  on('command.register', () => ({ value: { command: 'transprompt' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.close', () => ({ value: undefined }))
+  on('ui.status', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const held = await $.prompt.submit({ text: RAW, wait: false, origin: { kind: 'composer' } })
+  expect(held.drop).toBeDefined()
+}
+
+// Text는 key를 갖지 않으므로 종류와 글자로 찾는다.
+async function findInPane($: Engine, query: { type?: string; key?: string; text?: string }) {
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  const found = await ui.find(query)
+  await ui.unmount()
+
+  return found
+}
+
+async function pressInPane($: Engine, key: string) {
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key })
+  await ui.unmount()
+}
+
+test('the review pane switches between the structured and the original text', { options: { transpromptMinChars: 50 } }, async ($, on) => {
+  mock.store(on)
+  const clock = mock.clock(on)
+  on('model.complete', () => ({ value: { isAnswered: true, text: STRUCTURED, usage: USAGE } }))
+  await holdVoicePrompt($, on)
+  await clock.settle()
+
+  expect((await findInPane($, { key: 'preview' }))?.text).toContain('비밀번호 찾기 버튼을 보이게 한다')
+  expect(await findInPane($, { type: 'Text', text: RAW })).toBeUndefined()
+
+  await pressInPane($, 'tab-raw')
+  expect(await findInPane($, { type: 'Text', text: RAW })).toBeDefined()
+  expect(await findInPane($, { key: 'preview' })).toBeUndefined()
+
+  await pressInPane($, 'tab-structured')
+  expect((await findInPane($, { key: 'preview' }))?.text).toContain('에러 메시지를 한국어로 바꾼다')
+})
+
+test('the structuring pane counts the seconds since it started', { options: { transpromptMinChars: 50 } }, async ($, on) => {
+  mock.store(on)
+  const clock = mock.clock(on)
+  let answer: (value: unknown) => void = () => {}
+  on('model.complete', () => new Promise((resolve) => (answer = resolve)))
+  await holdVoicePrompt($, on)
+  await clock.settle()
+
+  expect(await findInPane($, { type: 'Text', text: '구조화 중' })).toBeDefined()
+  expect(await findInPane($, { type: 'Text', text: '0초 경과' })).toBeDefined()
+
+  await clock.advance(3000)
+  expect(await findInPane($, { type: 'Text', text: '3초 경과' })).toBeDefined()
+
+  answer({ value: { isAnswered: true, text: STRUCTURED, usage: USAGE } })
+  await clock.settle()
+  expect(await findInPane($, { type: 'Text', text: '검토 대기' })).toBeDefined()
+})
+
+test('a failed structuring says why in plain words and offers a retry first', { options: { transpromptMinChars: 50 } }, async ($, on) => {
+  mock.store(on)
+  const clock = mock.clock(on)
+  on('model.complete', () => ({
+    value: { isAnswered: false, reason: 'api-error', status: 529, error: 'overloaded', usage: USAGE },
+  }))
+  await holdVoicePrompt($, on)
+  await clock.settle()
+
+  expect(await findInPane($, { type: 'Text', text: '구조화 실패' })).toBeDefined()
+  expect(await findInPane($, { type: 'Text', text: '모델이 붐비고 있어요' })).toBeDefined()
+  expect((await findInPane($, { key: 'retry' }))?.props).toMatchObject({ variant: 'primary' })
 })

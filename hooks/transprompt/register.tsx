@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Draft } from '../../types'
 import { judgeVoice } from './voice'
@@ -7,6 +7,9 @@ import type { EditStats, VoiceVerdict } from './voice'
 
 const PANE = 'transprompt'
 const TITLE = 'Transprompt'
+const TIMEOUT_MS = 180000
+// 구조화 중이거나 실패했을 때 원문 미리보기에 보여 줄 글자 수.
+const RAW_EXCERPT = 160
 
 const draft = atom({ plugin: 'gudals', key: 'transpromptDraft' } as const, null)
 const bypassNext = atom({ plugin: 'gudals', key: 'transpromptBypassNext' } as const, false)
@@ -61,6 +64,44 @@ let draftLength = 0
 let lastVerdict: VoiceVerdict | undefined
 // 마지막 프롬프트가 판정 전에 걸러졌다면 그 이유. 판정까지 갔으면 비운다.
 let lastSkip: string | undefined
+// 검토 패널에서 보고 있는 탭. 새로 구조화할 때마다 구조화본으로 돌아간다.
+let view: 'structured' | 'raw' = 'structured'
+// 구조화 중에 경과 시간을 다시 그리는 타이머.
+let ticker: Timer | undefined
+
+function stopTicker() {
+  ticker?.cancel()
+  ticker = undefined
+}
+
+function excerpt(text: string) {
+  return text.length > RAW_EXCERPT ? `${text.slice(0, RAW_EXCERPT)}…` : text
+}
+
+type Unanswered = { reason: string; status?: number | null; error?: string }
+
+function describeFailure(result: Unanswered) {
+  if (result.reason === 'aborted') {
+    return `${TIMEOUT_MS / 1000}초 안에 답이 오지 않았어요`
+  }
+  if (result.reason === 'empty-reply') {
+    return '모델이 빈 답을 보냈어요'
+  }
+  if (result.reason === 'api-error') {
+    if (result.error === 'rate_limit') {
+      return '요청 한도에 걸렸어요. 잠시 뒤 다시 시도하세요'
+    }
+    if (result.error === 'overloaded') {
+      return '모델이 붐비고 있어요. 잠시 뒤 다시 시도하세요'
+    }
+    if (result.error === 'authentication_failed') {
+      return '인증에 실패했어요. 로그인 상태를 확인하세요'
+    }
+    return `API 오류 (${result.status ?? '응답 없음'})`
+  }
+
+  return result.reason
+}
 
 function describeVerdict(verdict: VoiceVerdict | undefined) {
   if (!verdict) {
@@ -79,17 +120,22 @@ async function structure($: EngineInterface, raw: string, model: string) {
   inFlight?.abort()
   const stop = new AbortController()
   inFlight = stop
-  await update($, draft, (): Draft => ({ phase: 'structuring', raw }))
+  view = 'structured'
+  const startedAt = await $.clock.now()
+  await update($, draft, (): Draft => ({ phase: 'structuring', raw, startedAt }))
   $.ui.status('transprompt: 구조화 중…')
+  stopTicker()
+  ticker = $.clock.every(1000, () => $.ui.invalidate('ui.render'))
 
   const result = await $.model.complete(
-    { model, system: SYSTEM, prompt: raw, maxTokens: 16000, timeoutMs: 180000 },
+    { model, system: SYSTEM, prompt: raw, maxTokens: 16000, timeoutMs: TIMEOUT_MS },
     { signal: stop.signal },
   )
   if (inFlight !== stop) {
     return
   }
   inFlight = undefined
+  stopTicker()
   $.ui.status(undefined)
 
   if (result.isAnswered && result.text.trim() !== '') {
@@ -97,14 +143,20 @@ async function structure($: EngineInterface, raw: string, model: string) {
     await update($, draft, (): Draft => ({ phase: 'ready', raw, structured }))
     $.ui.toast('transprompt: 구조화 완료, 확인 후 승인해 주세요')
   } else {
-    const reason = result.isAnswered ? 'empty-reply' : result.reason
+    const reason = describeFailure(result.isAnswered ? { reason: 'empty-reply' } : result)
     await update($, draft, (): Draft => ({ phase: 'failed', raw, reason }))
   }
+}
+
+async function showView($: EngineInterface, next: 'structured' | 'raw') {
+  view = next
+  $.ui.invalidate('ui.render')
 }
 
 async function finish($: EngineInterface) {
   inFlight?.abort()
   inFlight = undefined
+  stopTicker()
   $.ui.status(undefined)
   await update($, draft, () => null)
   await $.ui.close({ id: PANE })
@@ -232,6 +284,7 @@ export const registerTransprompt: Register = (on, options) => {
       const current = await read($, draft)
       inFlight?.abort()
       inFlight = undefined
+      stopTicker()
       $.ui.status(undefined)
       await update($, draft, () => null)
       if (current) {
@@ -254,13 +307,24 @@ export const registerTransprompt: Register = (on, options) => {
       )
     }
 
+    // 패널은 통째로 스크롤되므로, 버튼은 미리보기 위에 둬야 긴 구조화본에도 화면 안에 남는다.
     if (current.phase === 'structuring') {
+      const seconds = Math.max(0, Math.round(((await $.clock.now()) - current.startedAt) / 1000))
+
       return (
         <Box flexDirection="column" gap={1}>
-          <Text>음성 프롬프트를 구조화하는 중… ({current.raw.length}자)</Text>
-          <Box flexDirection="row" gap={1}>
-            <Button key="raw" hotkey="3" label="원문 그대로 보내기" onPress={() => send($, current.raw)} />
-            <Button key="cancel" hotkey="5" label="취소 (원문을 입력창으로)" onPress={() => toPrompt($, current.raw, false)} />
+          <Box flexDirection="row" gap={1} flexWrap="wrap">
+            <Text color="warning" weight="semibold">구조화 중</Text>
+            <Text dimColor size="caption">
+              {current.raw.length}자 · {seconds}초 경과 · {model}
+            </Text>
+          </Box>
+          <Box flexDirection="row" gap={2} flexWrap="wrap">
+            <Button key="raw" hotkey="3" plain dimColor label="원문 그대로 보내기" onPress={() => send($, current.raw)} />
+            <Button key="cancel" hotkey="5" plain dimColor label="취소 (원문을 입력창으로)" onPress={() => toPrompt($, current.raw, false)} />
+          </Box>
+          <Box borderStyle="round" paddingX={1}>
+            <Text dimColor>{excerpt(current.raw)}</Text>
           </Box>
         </Box>
       )
@@ -269,30 +333,55 @@ export const registerTransprompt: Register = (on, options) => {
     if (current.phase === 'failed') {
       return (
         <Box flexDirection="column" gap={1}>
-          <Text color="red">구조화 실패: {current.reason}</Text>
-          <Box flexDirection="row" gap={1}>
-            <Button key="retry" hotkey="4" variant="primary" label="다시 구조화" onPress={() => structure($, current.raw, model)} />
+          <Box flexDirection="row" gap={1} flexWrap="wrap">
+            <Text color="error" weight="semibold">구조화 실패</Text>
+            <Text dimColor size="caption">{current.reason}</Text>
+          </Box>
+          <Box flexDirection="row" gap={1} flexWrap="wrap">
+            <Button key="retry" hotkey="4" variant="primary" autoFocus label="다시 구조화" onPress={() => structure($, current.raw, model)} />
             <Button key="raw" hotkey="3" label="원문 그대로 보내기" onPress={() => send($, current.raw)} />
-            <Button key="cancel" hotkey="5" label="취소 (원문을 입력창으로)" onPress={() => toPrompt($, current.raw, false)} />
+          </Box>
+          <Box flexDirection="row" gap={2} flexWrap="wrap">
+            <Button key="cancel" hotkey="5" plain dimColor label="취소 (원문을 입력창으로)" onPress={() => toPrompt($, current.raw, false)} />
+          </Box>
+          <Box borderStyle="round" paddingX={1}>
+            <Text dimColor>{excerpt(current.raw)}</Text>
           </Box>
         </Box>
       )
     }
 
+    const verdict = voiceGate && lastVerdict ? ` · 음성 ${lastVerdict.score}점` : ''
+
     return (
       <Box flexDirection="column" gap={1}>
-        <Text dimColor>
-          이렇게 보내면 될까요? 원문 {current.raw.length}자 → 구조화 {current.structured.length}자
-        </Text>
-        {voiceGate && <Text dimColor>{describeVerdict(lastVerdict)}</Text>}
-        <Markdown key="preview" text={current.structured} />
+        <Box flexDirection="row" gap={1} flexWrap="wrap">
+          <Text color="suggestion" weight="semibold">검토 대기</Text>
+          <Text dimColor size="caption">
+            원문 {current.raw.length}자 → 구조화 {current.structured.length}자{verdict}
+          </Text>
+        </Box>
         <Box flexDirection="row" gap={1} flexWrap="wrap">
           <Button key="approve" hotkey="1" variant="primary" autoFocus label="승인하고 보내기" onPress={() => send($, current.structured)} />
           <Button key="edit" hotkey="2" label="입력창에서 고치기" onPress={() => toPrompt($, current.structured, true)} />
-          <Button key="raw" hotkey="3" label="원문 그대로 보내기" onPress={() => send($, current.raw)} />
-          <Button key="retry" hotkey="4" label="다시 구조화" onPress={() => structure($, current.raw, model)} />
-          <Button key="cancel" hotkey="5" label="취소 (원문을 입력창으로)" onPress={() => toPrompt($, current.raw, false)} />
         </Box>
+        <Box flexDirection="row" gap={2} flexWrap="wrap">
+          <Button key="raw" hotkey="3" plain dimColor label="원문 그대로" onPress={() => send($, current.raw)} />
+          <Button key="retry" hotkey="4" plain dimColor label="다시 구조화" onPress={() => structure($, current.raw, model)} />
+          <Button key="cancel" hotkey="5" plain dimColor label="취소" onPress={() => toPrompt($, current.raw, false)} />
+        </Box>
+        <Box flexDirection="row" gap={2}>
+          <Button key="tab-structured" hotkey="s" plain dimColor={view !== 'structured'} label="구조화본" onPress={() => showView($, 'structured')} />
+          <Button key="tab-raw" hotkey="r" plain dimColor={view !== 'raw'} label="원문" onPress={() => showView($, 'raw')} />
+        </Box>
+        <Box borderStyle="round" paddingX={1} flexDirection="column">
+          {view === 'structured' ? (
+            <Markdown key="preview" text={current.structured} />
+          ) : (
+            <Text>{current.raw}</Text>
+          )}
+        </Box>
+        {voiceGate && <Text dimColor size="caption">{describeVerdict(lastVerdict)}</Text>}
       </Box>
     )
   })
