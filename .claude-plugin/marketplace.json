@@ -1,0 +1,6 @@
+{
+  "name": "gudals",
+  "description": "Gudals0320의 개인 Claude Code 셋업",
+  "owner": { "name": "Gudals0320" },
+  "plugins": [{ "name": "gudals", "source": "./" }]
+}

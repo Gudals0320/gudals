@@ -1,0 +1,33 @@
+{
+  "name": "gudals",
+  "description": "Gudals0320의 개인 Claude Code 셋업: 스킬과 mod 묶음",
+  "author": { "name": "Gudals0320" },
+  "repository": "https://github.com/Gudals0320/gudals",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "transpromptMinChars": {
+      "type": "number",
+      "title": "transprompt: 구조화 최소 글자 수",
+      "description": "이 글자 수 이상인 프롬프트만 가로채서 구조화합니다.",
+      "default": 200
+    },
+    "transpromptModel": {
+      "type": "string",
+      "title": "transprompt: 구조화 모델",
+      "description": "구조화에 쓸 모델 (별칭 또는 전체 모델 ID).",
+      "default": "sonnet"
+    },
+    "transpromptVoiceGate": {
+      "type": "boolean",
+      "title": "transprompt: 음성 판정 게이트",
+      "description": "켜면 음성 받아쓰기로 보이는 프롬프트만 구조화합니다. 끄면 길이만 봅니다.",
+      "default": true
+    },
+    "transpromptVoiceThreshold": {
+      "type": "number",
+      "title": "transprompt: 음성 판정 점수 기준",
+      "description": "이 점수 이상이면 음성으로 봅니다. 높일수록 엄격합니다. /transprompt why 로 마지막 점수를 볼 수 있습니다.",
+      "default": 2
+    }
+  }
+}

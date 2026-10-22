@@ -1,0 +1,77 @@
+# gudals
+
+Gudals0320의 개인 Claude Code 셋업입니다. 스킬과 mod를 플러그인 하나(`gudals`)에 묶어 두고, 이 저장소 자체가 마켓플레이스입니다.
+
+## 들어 있는 것
+
+| 종류 | 이름 | 호출 | 설명 |
+| --- | --- | --- | --- |
+| 스킬 | `web` | `/gudals:web` (또는 자동) | 답하기 전에 남들의 경험·해결 사례·최신 정보를 먼저 찾고 근거 있는 추천을 줍니다 |
+| mod | transprompt | `/transprompt on \| off \| status \| why` | 음성인식으로 받아쓴 긴 프롬프트를 가로채 마크다운으로 구조화하고, 승인을 받은 뒤 보냅니다 |
+
+## 설치
+
+셸에서:
+
+```bash
+claude plugin marketplace add Gudals0320/gudals
+claude plugin install gudals@gudals
+```
+
+터미널 세션에서는 `/plugin marketplace add Gudals0320/gudals` 후 `/plugin install gudals@gudals`.
+데스크톱 앱에서는 프롬프트 입력창 옆 + 버튼 → Plugins → Add marketplace에 `Gudals0320/gudals`를 넣고 Add plugin을 누릅니다.
+
+## 자동 업데이트
+
+직접 만든 마켓플레이스는 자동 업데이트가 기본으로 꺼져 있습니다. 한 번 켜 두면 push할 때마다 세션 시작 시 새 커밋을 받아옵니다.
+
+- `/plugin` → **Marketplaces** → `gudals` → **Enable auto-update**
+
+수동으로 받으려면:
+
+```bash
+claude plugin marketplace update gudals
+```
+
+`plugin.json`에 `version`을 두지 않아서 설치본은 커밋 SHA를 따라갑니다. 버전을 올릴 필요 없이 push가 곧 릴리스입니다.
+
+## transprompt 설정
+
+| 설정 | 기본값 | 설명 |
+| --- | --- | --- |
+| `transpromptMinChars` | 200 | 이 글자 수 이상만 가로챕니다 |
+| `transpromptModel` | `sonnet` | 구조화에 쓸 모델 |
+| `transpromptVoiceGate` | `true` | 끄면 음성 판정 없이 길이만 봅니다 |
+| `transpromptVoiceThreshold` | 2 | 이 점수 이상이면 음성으로 봅니다 |
+
+`/plugin configure gudals@gudals` 또는 `/config`에서 바꿉니다.
+
+음성 판정은 `hooks/transprompt/voice.ts`가 점수로 추정합니다. 입력 방식(덩어리로 들어왔는지, 키로 쳤는지)과 텍스트 특징(줄바꿈, 코드·마크다운 기호, 영문 비율, 군말, 구어체 어미 등)을 봅니다. `/transprompt why`로 마지막 프롬프트의 점수와 근거를 볼 수 있습니다.
+
+## 구조
+
+```
+.claude-plugin/
+  marketplace.json      마켓플레이스 (플러그인 gudals 하나, source "./")
+  plugin.json           플러그인 매니페스트와 userConfig
+skills/<이름>/SKILL.md   스킬. /gudals:<이름> 으로 호출
+hooks/
+  hooks.json            hooks 모듈 진입점 (하나만 둘 수 있음)
+  index.ts              각 mod의 register를 부른다
+  <mod>/                mod별 코드
+types/index.d.ts        $.state 타입
+tests/                  claude plugin test 가 돌리는 테스트
+```
+
+## 새로 넣기
+
+- 스킬: `skills/<이름>/SKILL.md`를 만든다. 다른 곳은 건드릴 필요 없습니다.
+- mod: `hooks/<이름>/`에 코드를 두고 `hooks/index.ts`에서 부릅니다. `userConfig` 키, `$.store` 키, `$.state` 키에는 mod 이름을 접두어로 붙여 다른 mod와 겹치지 않게 합니다.
+
+## 개발
+
+```bash
+claude plugin validate .
+claude plugin test .
+claude --plugin-dir .
+```
