@@ -124,11 +124,32 @@ async function toPrompt($: EngineInterface, text: string, bypass: boolean) {
   await $.prompt.fill({ text })
 }
 
+type Settings = { minChars: number; model: string; voiceGate: boolean; voiceThreshold: number }
+
+async function runCommand($: EngineInterface, args: string, settings: Settings) {
+  const arg = args.trim()
+  if (arg === 'why') {
+    return { text: `transprompt: 마지막 프롬프트 ${lastSkip ?? describeVerdict(lastVerdict)}` }
+  }
+  if (arg === 'on' || arg === 'off') {
+    await $.store.set('transpromptEnabled', arg === 'on')
+  }
+  const enabled = await isEnabled($)
+  const { minChars, model, voiceGate, voiceThreshold } = settings
+
+  return {
+    text:
+      `transprompt: ${enabled ? '켜짐' : '꺼짐'} (${minChars}자 이상, ` +
+      `${voiceGate ? `음성 판정 점수 ${voiceThreshold} 이상만` : '음성 판정 없이'} 가로챔, 모델 ${model})`,
+  }
+}
+
 export const registerTransprompt: Register = (on, options) => {
   const minChars = Number(options.transpromptMinChars ?? 200)
   const model = String(options.transpromptModel ?? 'sonnet')
   const voiceGate = options.transpromptVoiceGate !== false
   const voiceThreshold = Number(options.transpromptVoiceThreshold ?? 2)
+  const settings: Settings = { minChars, model, voiceGate, voiceThreshold }
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -140,22 +161,10 @@ export const registerTransprompt: Register = (on, options) => {
     return next(e)
   })
 
-  on('command.run', { command: 'transprompt' }, async ($, e) => {
-    const arg = e.args.trim()
-    if (arg === 'why') {
-      return { text: `transprompt: 마지막 프롬프트 ${lastSkip ?? describeVerdict(lastVerdict)}` }
-    }
-    if (arg === 'on' || arg === 'off') {
-      await $.store.set('transpromptEnabled', arg === 'on')
-    }
-    const enabled = await isEnabled($)
-
-    return {
-      text:
-        `transprompt: ${enabled ? '켜짐' : '꺼짐'} (${minChars}자 이상, ` +
-        `${voiceGate ? `음성 판정 점수 ${voiceThreshold} 이상만` : '음성 판정 없이'} 가로챔, 모델 ${model})`,
-    }
-  })
+  // 짧은 /transprompt는 세션이 돌아야 등록되어, Desktop에서는 새 세션 첫 메시지의 자동완성에 안 뜬다.
+  // skills/transprompt가 디스크에서 바로 보이는 /gudals:transprompt를 만들고, 그 실행도 여기서 받는다.
+  on('command.run', { command: 'transprompt' }, async ($, e) => runCommand($, e.args, settings))
+  on('command.run', { command: 'gudals:transprompt' }, async ($, e) => runCommand($, e.args, settings))
 
   // 입력창 편집을 지켜보기만 한다: 키 하나로 들어온 글자와 붙여넣기/받아쓰기처럼 덩어리로 들어온 글자를 센다.
   on('prompt.edit', async ($, e, next) => {

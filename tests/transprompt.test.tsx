@@ -140,3 +140,17 @@ test('why explains a prompt skipped while turned off', { options: { transpromptM
   const why = await $.command.run({ command: 'transprompt', args: 'why' })
   expect(why.text).toContain('꺼져 있습니다')
 })
+
+test('/gudals:transprompt from the skill answers like /transprompt', { options: { transpromptMinChars: 50 } }, async ($, on) => {
+  mock.store(on)
+  on('command.register', () => ({ value: { command: 'transprompt' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const off = await $.command.run({ command: 'gudals:transprompt', args: 'off' })
+  expect(off.text).toContain('꺼짐')
+
+  const status = await $.command.run({ command: 'transprompt', args: 'status' })
+  expect(status.text).toContain('꺼짐')
+})
