@@ -1,0 +1,1249 @@
+<title>inquiry 보고서 템플릿</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=Noto+Serif+KR:wght@600;700&display=swap">
+<style>
+/* Layout: 16:9 데스크톱 전용 조사 보고서. 왼쪽 섹션 목록 + 본문: 머리(결론 띠·숫자 카드·조사 단계) → 결론(인용 번호·출처 패널) → 조사 과정(단계 상자) + 역추적 서랍 → 명제 → SNS 대조 → 사고 과정 → 출처 → 한계.
+   데이터는 같은 게시의 report.json(schema inquiry/report@0)에서 읽는다. 이 파일은 모든 리서치가 공유하는 고정 템플릿이다. */
+:root {
+  --bg: #E3E5E0; --surface: #F3F4F1; --surface-2: #DADDD6; --ink: #161A17; --ink-2: #475049; --ink-3: #737C75; --line: #C6CBC3;
+  --canvas: #E9EBE6; --dot: #CDD1CA;
+  --accent: #1F5BD1; --accent-soft: #E1E9FA;
+  --sup: #23804F; --sup-soft: #DCF0E3; --ref: #B73A2E; --ref-soft: #F7E0DC; --inc: #A26A00; --inc-soft: #F6EBD2; --irr: #8A918B; --irr-soft: #ECEEEA;
+  --lead: #7A4FB8; --lead-soft: #EEE6F8;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-display: "Noto Serif KR", "Nanum Myeongjo", serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0A0C0B; --surface: #141715; --surface-2: #1D211E; --ink: #E6E9E5; --ink-2: #A9B0AA; --ink-3: #7E8680; --line: #2B302C;
+    --canvas: #0E1110; --dot: #262B28;
+    --accent: #8DAEFF; --accent-soft: #1F2C4D;
+    --sup: #62C98E; --sup-soft: #173225; --ref: #F08B7F; --ref-soft: #3B1F1B; --inc: #E3B456; --inc-soft: #372B13; --irr: #7E8680; --irr-soft: #232824;
+    --lead: #BC9BF0; --lead-soft: #2D2440; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0A0C0B; --surface: #141715; --surface-2: #1D211E; --ink: #E6E9E5; --ink-2: #A9B0AA; --ink-3: #7E8680; --line: #2B302C;
+    --canvas: #0E1110; --dot: #262B28;
+  --accent: #8DAEFF; --accent-soft: #1F2C4D;
+  --sup: #62C98E; --sup-soft: #173225; --ref: #F08B7F; --ref-soft: #3B1F1B; --inc: #E3B456; --inc-soft: #372B13; --irr: #7E8680; --irr-soft: #232824;
+  --lead: #BC9BF0; --lead-soft: #2D2440; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.6;
+  padding: 24px 28px 72px; }
+html { scroll-behavior: smooth; scroll-padding-top: 20px; }
+.shell { display: grid; grid-template-columns: 216px minmax(0, 1fr); gap: 28px; max-width: 2400px; margin: 0 auto; }
+.shell.has-trace { grid-template-columns: 216px minmax(0, 1fr) 440px; }
+.wrap { min-width: 0; display: grid; gap: 40px; align-content: start; }
+.side { position: sticky; top: 24px; align-self: start; height: calc(100vh - 48px); display: flex; flex-direction: column; gap: 2px; }
+.side .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 18px; font-weight: 700; font-size: 15px; }
+.side .brand i { width: 28px; height: 28px; border-radius: 8px; background: var(--ink); color: var(--bg); display: grid; place-items: center; font-style: normal; font-size: 14px; }
+.side .grp { font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); padding: 14px 10px 6px; }
+.side a { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; color: var(--ink-2); text-decoration: none; font-size: 14px; }
+.side a:hover, .side a.on { background: var(--surface); color: var(--ink); }
+.side .cnt { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-3); background: var(--surface-2); border-radius: 6px; padding: 0 6px; }
+.side .foot { margin-top: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; font-size: 13px; }
+.side .foot .fl { font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em; color: var(--ink-3); }
+.side .foot .segs { display: flex; gap: 3px; } .side .foot .segs i { flex: 1; height: 5px; border-radius: 3px; background: var(--line); }
+.side .foot .segs i.on { background: var(--accent); }
+h1, h2, h3 { margin: 0; line-height: 1.3; text-wrap: balance; }
+h1 { font-size: clamp(24px, 3.4vw, 34px); letter-spacing: -0.02em; font-weight: 700; }
+h2 { font-size: 20px; }
+h3 { font-size: 15px; font-weight: 600; }
+p { margin: 0; max-width: 72ch; }
+a { color: var(--accent); }
+.mono { font-family: var(--font-mono); font-size: 0.88em; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.muted { color: var(--ink-2); }
+.small { font-size: 13px; }
+section { display: grid; gap: 14px; }
+.sec-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); white-space: nowrap; line-height: 1.6; }
+button.chip { font: inherit; font-size: 12.5px; cursor: pointer; }
+button.chip:hover { border-color: var(--accent); color: var(--accent); }
+.chip.s-pass, .chip.l-supports { background: var(--sup-soft); color: var(--sup); border-color: transparent; }
+.chip.s-fail, .chip.l-refutes { background: var(--ref-soft); color: var(--ref); border-color: transparent; }
+.chip.s-insufficient, .chip.s-contested, .chip.l-inconclusive { background: var(--inc-soft); color: var(--inc); border-color: transparent; }
+.chip.s-parked, .chip.l-irrelevant { background: var(--irr-soft); color: var(--irr); border-color: transparent; }
+.chip.strong { font-weight: 600; }
+.chip.lead { background: var(--lead-soft); color: var(--lead); border-color: transparent; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sample-band { background: var(--inc-soft); color: var(--inc); border-radius: 8px; padding: 8px 14px; font-size: 13.5px; }
+
+/* header */
+.head { display: grid; gap: 16px; }
+.crumbs { display: flex; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--ink-3); }
+.crumbs span + span::before { content: "/"; margin-right: 8px; color: var(--line); }
+.qtitle { font-family: var(--font-display); font-weight: 700; font-size: clamp(28px, 2.4vw, 40px); letter-spacing: -0.01em; line-height: 1.3; max-width: 58ch; }
+.banner { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 20px; }
+.banner .bicon { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; font-weight: 700; font-size: 18px; background: var(--irr-soft); color: var(--irr); }
+.banner.s-pass .bicon { background: var(--sup-soft); color: var(--sup); }
+.banner.s-fail .bicon { background: var(--ref-soft); color: var(--ref); }
+.banner.s-insufficient .bicon, .banner.s-contested .bicon { background: var(--inc-soft); color: var(--inc); }
+.banner .btext { display: grid; gap: 2px; min-width: 0; }
+.banner .bt { font-size: 12.5px; font-family: var(--font-mono); letter-spacing: .04em; color: var(--ink-3); }
+.banner .bh { font-size: 17px; font-weight: 600; }
+.banner .bs { font-size: 13.5px; color: var(--ink-2); }
+.btn { font: inherit; font-size: 13.5px; padding: 8px 14px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); text-decoration: none; white-space: nowrap; }
+.btn:hover { border-color: var(--ink-3); }
+.overview { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; align-items: stretch; }
+.kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.kpi .kl { font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+.kpi .kval { font-family: var(--font-mono); font-size: 30px; font-weight: 600; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.kpi .kval small { font-size: 15px; color: var(--ink-3); font-weight: 500; margin-left: 2px; }
+.kpi .kval.word { font-family: var(--font-body); font-size: 26px; }
+.kpi .kval.s-pass { color: var(--sup); } .kpi .kval.s-fail { color: var(--ref); } .kpi .kval.s-insufficient, .kpi .kval.s-contested { color: var(--inc); }
+.kpi .ks { font-size: 12.5px; color: var(--ink-2); }
+.kbar { display: flex; gap: 3px; height: 6px; } .kbar i { border-radius: 3px; }
+.kk { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: 0; }
+.kd-official { background: var(--accent); } .kd-paper { background: var(--lead); } .kd-media { background: var(--sup); } .kd-web { background: var(--inc); } .kd-sns { background: var(--ref); } .kd-blocked { background: var(--irr); }
+b.kd { background: none; font-weight: 600; } b.kd-official { color: var(--accent); } b.kd-media { color: var(--sup); } b.kd-web { color: var(--inc); } b.kd-paper { color: var(--lead); } b.kd-sns { color: var(--ref); }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+.stepsbox { padding: 14px 18px; display: grid; gap: 10px; align-content: start; }
+.stepsbox .ph, .sp-head { font-weight: 600; font-size: 14.5px; }
+.stps { list-style: none; margin: 0; padding: 0; display: grid; }
+.stps li { display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: 10px; position: relative; padding-bottom: 10px; }
+.stps li:not(:last-child)::after { content: ""; position: absolute; left: 10px; top: 22px; bottom: 0; width: 1.5px; background: var(--line); }
+.stps .ck { grid-row: span 2; width: 21px; height: 21px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.stps .st { font-size: 13.5px; font-weight: 600; }
+.stps .ss { font-size: 12.5px; color: var(--ink-3); }
+
+/* answer with citations */
+.gpill { display: inline-flex; align-items: center; gap: 7px; padding: 3px 11px; border-radius: 999px; background: var(--sup-soft); color: var(--sup); font-size: 12.5px; }
+.gpill i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.answer-grid { display: grid; grid-template-columns: minmax(0, 1fr) 440px; gap: 14px; align-items: start; }
+.answer { display: grid; }
+.qline { display: flex; gap: 10px; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--line); font-size: 14px; color: var(--ink-2); }
+.qbadge { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--ink); color: var(--bg); display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+.answer-text { padding: 18px 22px 20px; font-size: 17px; line-height: 1.9; max-width: none; }
+.sent { cursor: pointer; border-radius: 5px; padding: 1px 2px; transition: background .12s; }
+.sent:hover, .sent.on, .sent.hl { background: var(--accent-soft); }
+.cite { font: 600 10.5px/14px var(--font-mono); vertical-align: super; margin-left: 3px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 5px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink-2); cursor: pointer; }
+.cite:hover, .cite.hl { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.answer-foot { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 12px 20px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-2); }
+.srcpanel { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: 640px; overflow: hidden; }
+.sp-head { display: flex; gap: 8px; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.sp-head .cnt { font-family: var(--font-mono); font-size: 11.5px; background: var(--surface-2); color: var(--ink-2); border-radius: 6px; padding: 0 7px; }
+.sp-list { overflow: auto; padding: 8px; display: grid; gap: 4px; align-content: start; }
+.srcitem { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; padding: 12px; border-radius: 11px; border: 1px solid transparent; cursor: pointer; }
+.srcitem:hover, .srcitem.hl { border-color: var(--line); background: var(--canvas); }
+.srcitem .n { width: 22px; height: 22px; border-radius: 6px; background: var(--surface-2); display: grid; place-items: center; font: 600 11px var(--font-mono); color: var(--ink-2); }
+.srcitem.hl .n { background: var(--ink); color: var(--bg); }
+.srcitem .sb { display: grid; gap: 4px; min-width: 0; }
+.srcitem .meta { font: 11px var(--font-mono); letter-spacing: .05em; color: var(--ink-3); overflow-wrap: anywhere; }
+.srcitem .tt { font-size: 14px; font-weight: 600; line-height: 1.4; }
+.srcitem .qq { font-size: 13px; color: var(--ink-2); line-height: 1.55; }
+.sp-foot { padding: 10px 18px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-3); }
+.verdict { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 18px; align-items: start; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; }
+.vbadge { display: grid; place-items: center; text-align: center; min-width: 108px; padding: 14px 12px; border-radius: 10px; font-weight: 700; gap: 2px; }
+.vbadge .big { font-size: 20px; }
+.vbadge .sm { font-size: 12px; font-weight: 500; opacity: 0.85; }
+.vb-pass { background: var(--sup-soft); color: var(--sup); }
+.vb-fail { background: var(--ref-soft); color: var(--ref); }
+.vb-insufficient, .vb-contested { background: var(--inc-soft); color: var(--inc); }
+.vb-parked { background: var(--irr-soft); color: var(--irr); }
+.headline { font-size: 17px; font-weight: 600; }
+.stats { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.stats b { color: var(--ink); font-family: var(--font-mono); font-weight: 600; }
+
+
+/* graph + trace */
+.board { display: block; }
+/* faint dot grid; applyView scales it with the graph and fades it out when zoomed far out */
+.graphbox { position: relative; background-color: var(--canvas); border: 1px solid var(--line); border-radius: 12px; height: clamp(480px, 80vh, 1040px); overflow: hidden;
+  touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+.graphbox.panning { cursor: grabbing; }
+/* full-window graph; the trace stays beside it */
+body.graph-max { overflow: hidden; }
+body.graph-max::after { content: ""; position: fixed; inset: 0; background: var(--bg); z-index: 39; }
+.graphbox.max { position: fixed; inset: 12px; z-index: 40; height: auto; border-radius: 14px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35); }
+body.graph-max .shell.has-trace .graphbox.max { right: 464px; }
+body.graph-max .trace { position: fixed; top: 12px; right: 12px; bottom: 12px; width: 440px; height: auto; z-index: 41; }
+.gcanvas { position: absolute; inset: 0; }
+.gcanvas svg { display: block; width: 100%; height: 100%; }
+.zoombar { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 2px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 3px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08); cursor: default; }
+.zoombar button { font: inherit; font-size: 14px; min-width: 32px; height: 30px; padding: 0 10px; border: 0; border-radius: 999px; background: transparent; color: var(--ink-2); cursor: pointer; }
+.zoombar button:hover { background: var(--surface-2); color: var(--ink); }
+.zoombar .pct { font-family: var(--font-mono); font-size: 12px; min-width: 56px; }
+.zoombar .hint { font-size: 12px; color: var(--ink-3); padding: 0 10px 0 6px; }
+/* nodes (after AI Agent Pipeline): a small kind label, one title line, a caption under the box, a status dot */
+.tnode { cursor: pointer; transition: opacity .15s; }
+.tnode .box { fill: var(--surface); stroke: var(--line); stroke-width: 1.2; }
+.tnode .lab { fill: var(--ink-3); font-size: 10.5px; font-family: var(--font-mono); letter-spacing: .05em; }
+.tnode .main { fill: var(--ink); font-size: 13px; font-weight: 500; font-family: var(--font-body); }
+.tnode .cap { fill: var(--ink-3); font-size: 10.5px; font-family: var(--font-mono); }
+.tnode .dot { fill: var(--ink-3); }
+.tnode .hd { fill: var(--canvas); stroke: var(--ink-3); stroke-width: 1.2; }
+.tnode.k-root .box { fill: var(--ink); stroke: var(--ink); }
+.tnode.k-root .lab { fill: var(--bg); opacity: .7; } .tnode.k-root .main { fill: var(--bg); }
+.tnode.k-note .box { fill: var(--surface-2); stroke: transparent; }
+.tnode.k-fam .box { fill: var(--lead-soft); stroke: transparent; } .tnode.k-fam .lab { fill: var(--lead); }
+.tnode.side-discover .dot { fill: var(--lead); } .tnode.side-support .dot { fill: var(--sup); } .tnode.side-refute .dot { fill: var(--ref); }
+.tnode.l-supports .dot, .tnode.s-pass .dot { fill: var(--sup); }
+.tnode.l-refutes .dot, .tnode.s-fail .dot { fill: var(--ref); }
+.tnode.l-inconclusive .dot, .tnode.s-insufficient .dot, .tnode.s-contested .dot { fill: var(--inc); }
+.tnode.l-irrelevant .dot { fill: var(--irr); }
+.tnode.k-src.r-decisive .box { stroke: var(--ink-2); stroke-width: 1.6; }
+.tnode.k-src.r-ignored, .tnode.k-src.r-not_counted { opacity: .5; }
+/* key nodes stand out the way the pipeline's agent node does: a coloured border and label */
+.tnode.k-judge .box, .tnode.k-verdict .box, .tnode.k-conclusion .box { stroke-width: 1.6; }
+.tnode.k-judge.s-pass .box, .tnode.k-verdict.s-pass .box, .tnode.k-conclusion.s-pass .box { stroke: var(--sup); }
+.tnode.k-judge.s-fail .box, .tnode.k-verdict.s-fail .box, .tnode.k-conclusion.s-fail .box { stroke: var(--ref); }
+.tnode.k-judge.s-insufficient .box, .tnode.k-verdict.s-insufficient .box, .tnode.k-conclusion.s-insufficient .box,
+.tnode.k-judge.s-contested .box, .tnode.k-verdict.s-contested .box, .tnode.k-conclusion.s-contested .box { stroke: var(--inc); }
+.tnode.s-pass .lab { fill: var(--sup); } .tnode.s-fail .lab { fill: var(--ref); } .tnode.s-insufficient .lab, .tnode.s-contested .lab { fill: var(--inc); }
+.tnode.k-conclusion .box { fill: var(--accent-soft); stroke-width: 2; }
+.tnode:hover .box, .tnode:focus-visible .box { stroke: var(--accent); }
+.tnode:focus { outline: none; }
+.tnode.sel .box { stroke: var(--accent); stroke-width: 2.2; }
+/* the decomposition card (after a schema node): a head row and one row per claim */
+.pcard { fill: var(--surface); stroke: var(--line); stroke-width: 1.2; }
+.tnode.k-pclaim .rowbg { fill: transparent; stroke: none; }
+.tnode.k-pclaim.phead .rowbg { fill: var(--surface-2); }
+.tnode.k-pclaim:hover .rowbg { fill: var(--canvas); }
+.tnode.k-pclaim.sel .rowbg { fill: var(--accent-soft); }
+.tnode.k-pclaim .rowsep { stroke: var(--line); stroke-width: 1; }
+.tnode.k-pclaim .tree { fill: none; stroke: var(--ink-3); stroke-width: 1.1; }
+.tnode.k-pclaim.phead .main { font-weight: 600; }
+/* links: thin; the flow between stages is dotted, evidence keeps its label colour */
+.tedge { fill: none; stroke: var(--ink-3); stroke-width: 1.1; opacity: .5; transition: opacity .15s; }
+.tedge.l-supports { stroke: var(--sup); opacity: .75; }
+.tedge.l-refutes { stroke: var(--ref); opacity: .75; }
+.tedge.l-inconclusive { stroke: var(--inc); opacity: .75; }
+.tedge.r-decisive { stroke-width: 2.2; opacity: .95; }
+.tedge.link.converge.r-opposing { stroke-dasharray: 5 4; }
+.tedge.link.flow, .tedge.link.xlane { stroke-dasharray: 1.5 6; stroke-linecap: round; stroke-width: 1.8; }
+.tedge.link.flow { stroke: var(--ink-3); opacity: .7; }
+.tedge.link.xlane { stroke: var(--accent); opacity: .7; }
+.tedge.link.crux { stroke: var(--accent); stroke-width: 2; opacity: .9; }
+.tedge.link.noncrux { stroke-dasharray: 4 5; opacity: .45; }
+/* the selected path flows */
+@keyframes flowdash { to { stroke-dashoffset: -15; } }
+svg.focus .tedge.link.flow:not(.dim), svg.focus .tedge.link.xlane:not(.dim) { animation: flowdash .9s linear infinite; opacity: 1; }
+/* stage frames (after Labeled Group): a filled tab in the top-left corner */
+.frame .fbox { fill: var(--surface); fill-opacity: .35; stroke: var(--line); stroke-width: 1.2; }
+.frame .ftab { fill: var(--surface-2); }
+.frame .ft { fill: var(--ink); font-size: 12.5px; font-weight: 600; font-family: var(--font-body); }
+.frame .fs { fill: var(--ink-3); font-size: 11px; font-family: var(--font-mono); }
+svg.focus .frame { opacity: .75; }
+.arrhead { fill: var(--ink-3); }
+/* footer strip inside the graph box, like the pipeline's stats row */
+.gstats { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 22px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 8px 16px; cursor: default; }
+.gstats div { display: grid; gap: 1px; }
+.gstats span { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .1em; color: var(--ink-3); }
+.gstats b { font-family: var(--font-mono); font-size: 15px; font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
+svg.focus .tnode.dim, svg.focus .tedge.dim { opacity: .14; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--ink-2); align-items: center; }
+.legend i { display: inline-block; width: 22px; height: 0; border-top: 3px solid; vertical-align: middle; margin-right: 5px; }
+.toggles { display: flex; gap: 6px; flex-wrap: wrap; }
+.toggle { font: inherit; font-size: 13px; padding: 4px 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); cursor: pointer; }
+.toggle[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+/* trace: a right sidebar that opens beside the report, like the section list on the left */
+.trace { position: sticky; top: 24px; align-self: start; height: calc(100vh - 48px); min-width: 0;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 12px; align-content: start; overflow: auto; }
+.trace[hidden] { display: none; }
+.trace .close { justify-self: end; }
+.trace h3 { font-size: 16px; }
+.step { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; }
+.step .dot { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-family: var(--font-mono); font-size: 11px; background: var(--surface-2); color: var(--ink-2); }
+.step .body { display: grid; gap: 4px; min-width: 0; justify-items: start; }
+.step .k { font-size: 11.5px; font-family: var(--font-mono); color: var(--ink-3); letter-spacing: 0.04em; }
+.quote { font-size: 13.5px; border-left: 3px solid var(--line); padding: 2px 0 2px 10px; overflow-wrap: anywhere; }
+.quote.l-supports { border-color: var(--sup); } .quote.l-refutes { border-color: var(--ref); } .quote.l-inconclusive { border-color: var(--inc); }
+.ok { color: var(--sup); font-size: 12px; font-family: var(--font-mono); }
+.kv { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 2px 10px; font-size: 13px; }
+.kv dt { color: var(--ink-3); } .kv dd { margin: 0; overflow-wrap: anywhere; }
+.evlist { display: grid; gap: 10px; }
+.ev { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 6px; }
+.ev.r-decisive { border-color: var(--accent); }
+.empty { color: var(--ink-3); font-size: 13.5px; }
+
+/* claims */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 8px; align-content: start; cursor: pointer; }
+.card:hover { border-color: var(--accent); }
+.card .cid { font-family: var(--font-mono); font-weight: 600; }
+.basis { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--ink-2); display: grid; gap: 2px; }
+
+/* tables */
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+th { font-size: 12px; color: var(--ink-2); font-weight: 600; background: var(--surface-2); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.q { min-width: 220px; }
+
+/* timeline */
+.timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border-left: 2px solid var(--line); margin-left: 8px; }
+.timeline li { position: relative; padding: 0 0 16px 20px; display: grid; gap: 4px; }
+.timeline li::before { content: ""; position: absolute; left: -7px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--surface); border: 2px solid var(--ink-3); }
+.timeline li.st-frame::before, .timeline li.st-plan::before { border-color: var(--accent); }
+.timeline li.st-discover::before { border-color: var(--lead); }
+.timeline li.st-approve::before { border-color: var(--ink); background: var(--ink); }
+.timeline li.st-search::before { border-color: var(--inc); }
+.timeline li.st-judge::before, .timeline li.st-decide::before { border-color: var(--sup); }
+
+.limits { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.limits li { background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--inc); border-radius: 0 8px 8px 0; padding: 10px 14px; font-size: 13.5px; }
+.err { background: var(--ref-soft); color: var(--ref); padding: 16px; border-radius: 10px; }
+
+@media (prefers-reduced-motion: reduce) { .tedge, .tnode { transition: none; } svg.focus .tedge { animation: none !important; } }
+</style>
+
+<div class="shell"><nav class="side" id="side" aria-label="보고서 섹션"></nav><main class="wrap" id="app"><p class="muted">보고서 데이터를 불러오는 중…</p></main><aside class="trace" id="trace" aria-live="polite" hidden></aside></div>
+
+<script>
+(function () {
+  "use strict";
+  const T = {
+    status: { pass: "지지됨", fail: "반박됨", insufficient: "근거 부족", contested: "판정 갈림", parked: "보류" },
+    conf: { high: "높음", medium: "중간", low: "낮음", very_low: "매우 낮음" },
+    label: { supports: "지지", refutes: "반박", inconclusive: "결론 없음", irrelevant: "무관" },
+    role: { decisive: "결정 근거", supporting: "같은 방향", opposing: "반대 근거", related: "관련(간접·결론 없음)", not_counted: "판정 제외(등급 미달)", ignored: "무관·차단" },
+    kind: { official: "공식", media: "매체", web: "웹", sns: "SNS", paper: "논문", blocked: "차단 화면" },
+    side: { discover: "단서 수집", support: "지지 쪽", refute: "반박 쪽", trace: "원출처 추적" },
+    fidelity: { faithful: "충실", exaggerated: "과장", misrepresented: "왜곡", missing_condition: "조건 누락", contested: "판정 불가", unrelated: "무관" },
+    step: { frame: "틀 잡기", discover: "단서 수집", plan: "분해", approve: "승인", search: "탐색", judge: "판정", decide: "수렴", report: "보고" },
+    type: { BOOL: "사실형", DIR: "방향형", MAG: "크기형", EVAL: "평가형" },
+    lang: { ko: "한국어", en: "영어" },
+  };
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const clip = (s, n) => { s = String(s ?? ""); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
+  const fmtTime = (t) => { if (!t) return ""; const d = new Date(t); return isNaN(d) ? "" : d.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }); };
+
+  // sel: the record the trace shows; focus: the graph nodes picked (a sentence can pick several)
+  let R, by, state = { sel: null, selKey: null, focus: [], showAll: false };
+
+  function index(r) {
+    const m = (arr) => Object.fromEntries((arr || []).map((x) => [x.id, x]));
+    const ix = { claim: m(r.claims), fam: m(r.families), lead: m(r.leads), search: m(r.searches), src: m(r.sources), ev: m(r.evidence) };
+    ix.evByClaim = {}; ix.evBySrc = {};
+    for (const e of r.evidence || []) { (ix.evByClaim[e.claim] ||= []).push(e); (ix.evBySrc[e.source] ||= []).push(e); }
+    ix.leadsByFam = {};
+    for (const l of r.leads || []) if (l.family) (ix.leadsByFam[l.family] ||= []).push(l);
+    return ix;
+  }
+
+  // ---------- page ----------
+  function render() {
+    const m = R.meta, v = R.verdict, root = by.claim[v.root] || {};
+    const html = [];
+    const ev = R.evidence || [], srcs = R.sources || [], searches = R.searches || [];
+    const cruxKids = (R.claims || []).filter((c) => c.parent === v.root && c.crux);
+    const kindCount = Object.entries(srcs.reduce((a, s) => ((a[s.kind] = (a[s.kind] || 0) + 1), a), {})).sort((a, b) => b[1] - a[1]);
+    const plans = R.plans || [];
+    const discN = searches.filter((s) => s.side === "discover").length;
+    const steps = [
+      ["① 틀 잡기", `${T.lang[m.lang?.primary] || m.lang?.primary || "-"} 주 언어 · 학술 검색 ${m.academic_search ? "켬" : "끔"}`, null],
+      ["② 단서 수집", `검색 ${discN} · 주장 묶음 ${(R.families || []).length}`, null],
+      ["③ 분해·승인", `명제 ${(R.claims || []).length}${plans.length ? ` · 분해 v${plans[0].version}→v${plans[plans.length - 1].version}` : ""}`, plans[0]?.at],
+      ["④ 조사", `검색 ${searches.length - discN} · 출처 ${srcs.length} · 근거 ${ev.length}`, null],
+      ["⑤ 수렴", `${v.root} ${T.status[v.status] || v.status} · 확신도 ${T.conf[v.confidence] || "-"}`, null],
+      ["⑥ 결론", "보고서 작성", m.finished_at],
+    ];
+    const icon = v.status === "pass" ? "✓" : v.status === "fail" ? "✕" : "!";
+    html.push(`<header class="head" id="sec-top">
+      <div class="crumbs"><span>inquiry</span><span>리서치 보고서</span><span class="mono">${esc(m.id)}</span>${m.finished_at ? `<span>${esc(fmtTime(m.finished_at))}</span>` : ""}</div>
+      ${m.sample ? `<div class="sample-band">샘플 데이터입니다. 템플릿 디자인을 위해 이전 실행 기록을 새 형식으로 옮겼고, 사고 과정은 실행 기록에서 재구성했습니다.</div>` : ""}
+      <h1 class="qtitle">${esc(m.question)}</h1>
+      <div class="banner s-${esc(v.status)}">
+        <span class="bicon">${icon}</span>
+        <div class="btext"><span class="bt">${esc(T.status[v.status] || v.status)} · 확신도 ${esc(T.conf[v.confidence] || "-")}</span><span class="bh">${esc(v.headline)}</span><span class="bs">살아남은 주장: ${esc(v.surviving_claim || "없음")}</span></div>
+        <a class="btn" href="#sec-sent">근거 보기</a>
+      </div>
+      <div class="overview">
+        <div class="kpis">
+          <div class="kpi"><span class="kl">루트 판정</span><span class="kval word s-${esc(v.status)}">${esc(T.status[v.status] || v.status)}</span><span class="ks">확신도 ${esc(T.conf[v.confidence] || "-")} · 핵심 쟁점 ${cruxKids.filter((c) => c.status === "pass").length}/${cruxKids.length} 통과</span></div>
+          <div class="kpi"><span class="kl">근거</span><span class="kval">${ev.length}</span><span class="ks">결정 근거 ${ev.filter((e) => e.role === "decisive").length} · 반대 ${ev.filter((e) => e.role === "opposing").length}</span></div>
+          <div class="kpi"><span class="kl">인용 대조</span><span class="kval">${ev.filter((e) => e.quote_ok).length}<small>/${ev.length}</small></span><span class="ks">보관 원문과 글자 그대로 일치</span></div>
+          <div class="kpi"><span class="kl">출처</span><span class="kval">${srcs.length}</span>
+            <span class="kbar">${kindCount.map(([k, n]) => `<i class="kd-${esc(k)}" style="flex:${n}" title="${esc(T.kind[k] || k)} ${n}"></i>`).join("")}</span>
+            <span class="ks">${kindCount.map(([k, n]) => `<span class="kk kd-${esc(k)}"></span>${esc(T.kind[k] || k)} ${n}`).join(" · ")}</span></div>
+          <div class="kpi"><span class="kl">검색</span><span class="kval">${searches.length}</span><span class="ks">반박 쪽 ${searches.filter((s) => s.side === "refute").length} · 단서 수집 ${discN} · 단서 글 ${(R.leads || []).length}</span></div>
+          <div class="kpi"><span class="kl">소요</span><span class="kval">${esc(m.duration_min ?? "-")}<small>분</small></span><span class="ks">${esc(T.lang[m.lang?.primary] || m.lang?.primary || "-")}${(m.lang?.secondary || []).length ? ` + ${esc(m.lang.secondary.map((x) => T.lang[x] || x).join(", "))}` : ""} · 학술 검색 ${m.academic_search ? "켬" : "끔"}</span></div>
+        </div>
+        <div class="panel stepsbox"><div class="ph">조사 단계</div><ol class="stps">${steps.map(([t, s, at]) => `<li><span class="ck">✓</span><span class="st">${esc(t)}</span><span class="ss">${esc(s)}${at ? ` · ${esc(fmtTime(at))}` : ""}</span></li>`).join("")}</ol></div>
+      </div>
+    </header>`);
+
+    // conclusion: an answer with numbered citations and a docked list of the sources they point to
+    const cite = { nums: new Map(), list: [] };
+    const perSent = (v.sentences || []).map((s) => {
+      const pick = (role) => (s.refs || []).flatMap((c) => (by.evByClaim[c] || []).filter((e) => e.role === role));
+      const evs = pick("decisive").length ? pick("decisive") : pick("supporting");
+      return [...new Set(evs.map((e) => e.source))].map((id) => {
+        if (!cite.nums.has(id)) { cite.nums.set(id, cite.list.length + 1); cite.list.push(id); }
+        return cite.nums.get(id);
+      });
+    });
+    const srcItem = (id) => {
+      const s = by.src[id] || {}, n = cite.nums.get(id);
+      const evs = (by.evBySrc[id] || []).filter((e) => ["decisive", "supporting"].includes(e.role));
+      const e = evs[0];
+      return `<div class="srcitem" data-n="${n}" data-go="src:${esc(id)}" tabindex="0"><span class="n">${n}</span><div class="sb">
+        <span class="meta"><b class="kd kd-${esc(s.kind)}">${esc(T.kind[s.kind] || s.kind)}</b> · ${esc(s.host || "")}</span>
+        <span class="tt">${esc(clip(s.title || s.host, 90))}</span>
+        ${e?.quote ? `<span class="qq">“${esc(clip(e.quote, 220))}”</span>` : ""}
+        <span class="row small">${[...new Set(evs.map((x) => x.claim))].map((c) => `<span class="chip s-${esc(by.claim[c]?.status)}">${esc(c)}</span>`).join("")}${evs.every((x) => x.quote_ok) && evs.length ? '<span class="ok">✓ 원문 대조</span>' : ""}</span>
+      </div></div>`;
+    };
+    html.push(`<section id="sec-sent" aria-labelledby="h-sent"><div class="sec-head"><h2 id="h-sent">결론</h2><span class="gpill"><i></i>인용 ${ev.filter((e) => e.quote_ok).length}/${ev.length} 원문 대조 일치</span></div>
+      <div class="answer-grid">
+        <article class="panel answer">
+          <div class="qline"><span class="qbadge">Q</span><span>${esc(m.question)}</span></div>
+          <p class="answer-text">${(v.sentences || []).map((s, i) => `<span class="sent" tabindex="0" data-sent="${i}" data-refs="${esc((s.refs || []).join(" "))}">${esc(s.text)}${perSent[i].map((n) => `<button type="button" class="cite" data-n="${n}" aria-label="출처 ${n}">${n}</button>`).join("")}</span>`).join(" ")}</p>
+          <div class="answer-foot"><span>근거 명제</span>${[...new Set((v.sentences || []).flatMap((s) => s.refs || []))].map((c) => `<button class="chip s-${esc(by.claim[c]?.status)}" data-go="claim:${esc(c)}">${esc(c)} ${esc(T.status[by.claim[c]?.status] || "")}</button>`).join("")}<span class="muted">문장을 누르면 조사 과정에서 그 경로가 강조된다</span></div>
+        </article>
+        <aside class="panel srcpanel" aria-label="근거 출처"><div class="sp-head">근거 출처 <span class="cnt">${cite.list.length}</span></div>
+          <div class="sp-list">${cite.list.map(srcItem).join("") || '<span class="empty">인용된 출처가 없습니다.</span>'}</div>
+          <div class="sp-foot">출처에 마우스를 올리면 결론에서 쓰인 곳이 보이고, 누르면 역추적이 열린다</div></aside>
+      </div></section>`);
+
+    html.push(`<section id="sec-graph" aria-labelledby="h-graph">
+      <div class="sec-head"><h2 id="h-graph">조사 과정</h2>
+        <div class="toggles"><button class="toggle" id="t-open">모두 펼치기</button><button class="toggle" id="t-shut">결정 근거만 펼치기</button><button class="toggle" id="t-all" aria-pressed="${state.showAll}">판정에서 뺀 출처도 보기</button><button class="toggle" id="t-clear">선택 해제</button></div></div>
+      <div class="legend">
+        <span>단계 상자는 왼쪽에서 오른쪽으로 시간순, 같은 명제는 분해부터 판정까지 한 줄에 놓인다</span>
+        <span><i style="border-color:var(--sup)"></i>지지</span><span><i style="border-color:var(--ref)"></i>반박</span><span><i style="border-color:var(--inc)"></i>결론 없음</span>
+        <span>굵은 선 = 결정 근거, 빨간 점선 = 반대 근거. 근거는 명제 판정으로, 판정은 ⑤에서 루트로 모인다(굵은 파랑 = 핵심 쟁점, 점선 = 비핵심). 노드를 누르면 결론까지의 경로가 강조된다</span>
+      </div>
+      <div class="board"><div class="graphbox" id="graphbox"><div class="gcanvas" id="graph"></div>
+        <div class="zoombar" role="group" aria-label="그래프 보기"><button type="button" id="z-out" aria-label="축소">−</button><button type="button" class="pct" id="zpct" title="100%로">100%</button><button type="button" id="z-in" aria-label="확대">+</button><button type="button" id="z-fit" title="그래프 전체를 상자에 맞춤">전체 보기</button><button type="button" id="z-max" title="그래프를 창 전체로 크게 보기 (Esc로 돌아감)">⤢ 크게 보기</button><span class="hint">휠로 확대·축소, 끌어서 이동</span></div>${gstats()}</div></div>
+    </section>`);
+
+    html.push(`<section id="sec-claims" aria-labelledby="h-claims"><h2 id="h-claims">명제별 판정</h2><div class="cards">${claimOrder().map(claimCard).join("")}</div></section>`);
+
+    if ((R.origin_checks || []).length) {
+      html.push(`<section id="sec-sns" aria-labelledby="h-sns"><div class="sec-head"><h2 id="h-sns">SNS·웹에서 돌던 주장 → 원출처 대조</h2><span class="muted small">글이 원출처를 어떻게 옮겼는지</span></div>
+        <div class="tablewrap"><table><thead><tr><th>명제</th><th>대조</th><th>글이 한 말</th><th>원출처 문장</th></tr></thead><tbody>
+        ${R.origin_checks.map((o) => `<tr><td><button class="chip" data-go="claim:${esc(o.claim)}">${esc(o.claim)}</button></td><td><span class="chip ${o.fidelity === "faithful" ? "l-supports" : o.fidelity === "contested" || o.fidelity === "unrelated" ? "l-irrelevant" : "l-refutes"}">${esc(T.fidelity[o.fidelity] || o.fidelity)}</span></td><td class="q">${esc(o.post)}</td><td class="q">${esc(o.origin)}</td></tr>`).join("")}
+        </tbody></table></div></section>`);
+    }
+
+    html.push(`<section id="sec-think" aria-labelledby="h-think"><div class="sec-head"><h2 id="h-think">사고 과정</h2><span class="muted small">결정할 때마다 남긴 기록. 칩을 누르면 그래프로 이동</span></div>
+      <ol class="timeline">${(R.decisions || []).map((d) => `<li class="st-${esc(d.step)}"><span class="row"><span class="chip">${esc(T.step[d.step] || d.step)}</span>${d.at ? `<span class="mono muted">${esc(fmtTime(d.at))}</span>` : ""}</span><span>${esc(d.text)}</span>${(d.refs || []).length ? `<span class="row">${d.refs.map(refChip).join("")}</span>` : ""}</li>`).join("")}</ol></section>`);
+
+    html.push(`<section id="sec-src" aria-labelledby="h-src"><div class="sec-head"><h2 id="h-src">출처</h2><div class="toggles" id="kindf">${["all", "official", "media", "web", "sns", "paper", "blocked"].map((k) => `<button class="toggle" data-kind="${k}" aria-pressed="${k === "all"}">${k === "all" ? "전체" : T.kind[k]}</button>`).join("")}</div></div>
+      <div class="tablewrap"><table><thead><tr><th>출처</th><th>종류</th><th>접근</th><th>찾은 검색</th><th>쓰인 곳</th></tr></thead><tbody id="srcrows"></tbody></table></div></section>`);
+
+    html.push(`<section id="sec-lim" aria-labelledby="h-lim"><h2 id="h-lim">한계와 열린 질문</h2><ul class="limits">${(R.limits || []).map((l) => `<li>${esc(l.text)}</li>`).join("") || "<li>기록된 한계가 없습니다.</li>"}</ul></section>`);
+
+    document.getElementById("app").innerHTML = html.join("");
+    const navs = [["sec-top", "개요", null], ["sec-sent", "결론", (v.sentences || []).length], ["sec-graph", "조사 과정", (R.claims || []).length], ["sec-claims", "명제별 판정", (R.claims || []).length],
+      ...((R.origin_checks || []).length ? [["sec-sns", "원출처 대조", R.origin_checks.length]] : []), ["sec-think", "사고 과정", (R.decisions || []).length], ["sec-src", "출처", (R.sources || []).length], ["sec-lim", "한계", (R.limits || []).length]];
+    const crux = (R.claims || []).filter((c) => c.parent === v.root && c.crux);
+    document.getElementById("side").innerHTML = `<div class="brand"><i>i</i>inquiry</div><div class="grp">보고서</div>
+      ${navs.map(([id, t, n]) => `<a href="#${id}" data-sec="${id}"><span>${t}</span>${n != null ? `<span class="cnt">${n}</span>` : ""}</a>`).join("")}
+      <div class="foot"><span class="fl">핵심 쟁점</span><span class="segs">${crux.map((c) => `<i class="${c.status === "pass" ? "on" : ""}" title="${esc(c.id)} ${esc(T.status[c.status] || "")}"></i>`).join("")}</span><span>${crux.filter((c) => c.status === "pass").length}/${crux.length} 통과 · ${esc(T.status[v.status] || v.status)}</span></div>`;
+    // highlight the section in view
+    const io = new IntersectionObserver((ents) => ents.forEach((e) => { if (e.isIntersecting) document.querySelectorAll(".side a").forEach((a) => a.classList.toggle("on", a.dataset.sec === e.target.id)); }), { rootMargin: "-30% 0px -60% 0px" });
+    document.querySelectorAll("#app [id^=sec-]").forEach((el) => io.observe(el));
+    drawGraph();
+    drawSources("all");
+    showTrace();
+    wire();
+  }
+
+  function gstats() {
+    const cells = [["단계", 6], ["명제", (R.claims || []).length], ["검색", (R.searches || []).length], ["출처", (R.sources || []).length], ["근거", (R.evidence || []).length]];
+    return `<div class="gstats">${cells.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>`;
+  }
+
+  function refChip(id) {
+    const t = id[0] === "C" ? "claim" : id[0] === "E" ? "ev" : id[0] === "S" ? "search" : id[0] === "R" ? "src" : id[0] === "F" ? "fam" : id[0] === "L" ? "lead" : null;
+    return t ? `<button class="chip" data-go="${t}:${esc(id)}">${esc(id)}</button>` : `<span class="chip">${esc(id)}</span>`;
+  }
+
+  function claimOrder() {
+    const out = [], seen = new Set();
+    const walk = (c) => { if (!c || seen.has(c.id)) return; seen.add(c.id); out.push(c); (R.claims || []).filter((x) => x.parent === c.id).forEach(walk); };
+    (R.claims || []).filter((c) => !c.parent).forEach(walk);
+    (R.claims || []).forEach(walk);
+    return out;
+  }
+
+  function claimCard(c) {
+    const evs = by.evByClaim[c.id] || [];
+    const n = (r) => evs.filter((e) => e.role === r).length;
+    return `<article class="card" data-go="claim:${esc(c.id)}" tabindex="0">
+      <div class="row"><span class="cid">${esc(c.id)}</span><span class="chip">${esc(T.type[c.type] || c.type)}</span>${c.crux ? '<span class="chip strong">핵심 쟁점</span>' : ""}<span class="chip s-${esc(c.status)} strong">${esc(T.status[c.status] || c.status)} · ${esc(T.conf[c.confidence] || "-")}</span></div>
+      <span>${esc(c.text)}</span>
+      <span class="muted small">${esc(c.reason || "")}</span>
+      ${(c.basis || []).length ? `<ul class="basis">${c.basis.slice(0, 3).map((b) => `<li>${esc(clip(b, 140))}</li>`).join("")}</ul>` : ""}
+      <span class="small muted">결정 근거 ${n("decisive")} · 반대 ${n("opposing")} · 관련 ${n("related") + n("supporting")} · 제외 ${n("not_counted") + n("ignored")}${(c.from_families || []).length ? ` · 단서 ${c.from_families.join(", ")}` : ""}</span>
+    </article>`;
+  }
+
+  // ---------- process tree ----------
+  // The research as it happened, left to right: the question, then one frame per
+  // stage in time order, each holding what that stage produced. Searches hold the
+  // sources they found; sources converge on their claim's verdict.
+  const COLW = 276, NW = 232, NH = 46, VGAP = 30, TOP = 16, LEFT = 16, LANEGAP = 110, FPAD = 26, FTOP = 60, BLOCKGAP = 18;
+  // the decomposition is one card: a head row for the root claim, one row per other claim
+  const CARDW = 312, HEADH = 66, ROWH = 46, ROOTGAP = 130;
+  // wider gaps where arrows cross from one stage to the next
+  const GAP_AFTER = { "st:plan": 300, "st:inv": 200, "st:conv": 160 };
+  const tstate = { collapsed: new Set(), ready: false };
+  let TREE = null, FLAT = [], LINKS = [];
+
+  function tn(key, kind, title, sub, ref, extra) { return { key, kind, title, sub, ref, children: [], ...(extra || {}) }; }
+
+  function visibleEv() { return (R.evidence || []).filter((e) => state.showAll || !["ignored", "not_counted"].includes(e.role)); }
+
+  function buildTree() {
+    const m = R.meta, v = R.verdict;
+    const floats = [];
+    const root = tn("q", "root", "질문", m.question, null);
+    const evs = visibleEv();
+
+    const frame = tn("st:frame", "stage", "① 틀 잡기", `${T.lang[m.lang?.primary] || m.lang?.primary || "-"} 주 언어 · 학술 검색 ${m.academic_search ? "켬" : "끔"}`, null);
+    if (m.lang?.why) frame.children.push(tn("frame:why", "note", "언어를 고른 이유", m.lang.why, null));
+
+    const discS = (R.searches || []).filter((s) => s.side === "discover");
+    const disc = tn("st:disc", "stage", "② 단서 수집", `검색 ${discS.length} · 단서 ${(R.leads || []).length} · 주장 묶음 ${(R.families || []).length}`, null);
+    const placedFam = new Set();
+    for (const s of discS) {
+      const sn = tn("ds:" + s.id, "search", `단서 검색 · ${T.lang[s.lang] || s.lang}`, s.query, "search:" + s.id, { side: "discover", cap: `${s.id} · ${s.channel}` });
+      const famIds = [...new Set((R.leads || []).filter((l) => l.found_by === s.id && l.family).map((l) => l.family))];
+      for (const f of famIds) {
+        if (placedFam.has(f) || !by.fam[f]) continue;
+        placedFam.add(f);
+        sn.children.push(tn("f:" + f, "fam", `주장 묶음 · 원출처 ${by.fam[f].origin_groups}곳`, by.fam[f].text, "fam:" + f, { cap: f }));
+      }
+      const n = (R.leads || []).filter((l) => l.found_by === s.id).length;
+      sn.sub2 = `글 ${n} · 새 묶음 ${sn.children.length}`;
+      if (!tstate.ready && sn.children.length) tstate.collapsed.add(sn.key);
+      disc.children.push(sn);
+    }
+
+    const plan = tn("st:plan", "stage", "③ 분해·승인", `명제 ${(R.claims || []).length} · 사용자 승인`, null);
+    const planClaim = (c) => {
+      const node = tn("p:" + c.id, "pclaim", `${c.id} · ${T.type[c.type] || c.type}${c.crux ? " · 핵심" : ""}`, c.text, "claim:" + c.id,
+        { sub2: (c.from_families || []).length ? `단서 ${c.from_families.join(" ")}` : "" });
+      (R.claims || []).filter((x) => x.parent === c.id).forEach((k) => node.children.push(planClaim(k)));
+      return node;
+    };
+    (R.claims || []).filter((c) => !c.parent).forEach((c) => plan.children.push(planClaim(c)));
+
+    const inv = tn("st:inv", "stage", "④ 조사", "", null);
+    const roleRank = { decisive: 0, opposing: 1, supporting: 2, related: 3, not_counted: 4, ignored: 5 };
+    for (const c of claimOrder()) {
+      const all = (R.evidence || []).filter((e) => e.claim === c.id);
+      if (!all.length) continue;
+      const cev = evs.filter((e) => e.claim === c.id);
+      const cn = tn("i:" + c.id, "claim", `${c.id} 조사`, c.text, "claim:" + c.id, { status: c.status, cap: `${T.type[c.type] || c.type}${c.crux ? " · 핵심" : ""}` });
+      // Sources found by this claim's own searches sit under them; the rest
+      // (traced from leads, or found while searching for another claim) go to "trace".
+      const keys = ["trace", ...(R.searches || []).filter((s) => s.claim === c.id).map((s) => s.id)];
+      const groups = new Map();
+      for (const e of cev) {
+        const src = by.src[e.source] || {};
+        const sid = (src.found_by || []).find((x) => keys.includes(x)) || "trace";
+        if (!groups.has(sid)) groups.set(sid, []);
+        groups.get(sid).push(e);
+      }
+      for (const k of keys) {
+        const list = (groups.get(k) || []).sort((a, b) => roleRank[a.role] - roleRank[b.role]);
+        const s = k === "trace" ? null : by.search[k];
+        if (!s && !list.length) continue;
+        const decisive = list.filter((e) => e.role === "decisive").length;
+        const sub2 = `출처 ${list.length}${decisive ? ` · 결정 ${decisive}` : ""}`;
+        const gn = s
+          ? tn("i:" + c.id + ":" + s.id, "search", `${T.side[s.side] || s.side} 검색 · ${T.lang[s.lang] || s.lang}`, s.query, "search:" + s.id, { side: s.side, sub2, cap: `${s.id} · ${s.channel}` })
+          : tn("i:" + c.id + ":trace", "search", "원출처 추적", "단서·다른 검색에서 찾은 출처", null, { side: "trace", sub2 });
+        for (const e of list) {
+          const src = by.src[e.source] || {};
+          const roleTag = e.role === "decisive" ? " · 결정" : e.role === "opposing" ? " · 반대" : "";
+          gn.children.push(tn("e:" + e.id, "src", `${T.kind[src.kind] || src.kind} · ${T.label[e.label] || e.label}${roleTag}`, src.title || src.host, "src:" + src.id, { label: e.label, role: e.role, cap: `${src.id} · ${src.host || ""}` }));
+        }
+        if (!tstate.ready && !decisive && gn.children.length) tstate.collapsed.add(gn.key);
+        cn.children.push(gn);
+      }
+      // the verdict sits right of the sources and gathers their arrows (placed in layoutTree)
+      floats.push(tn("j:" + c.id, "judge", `${c.id} 판정 · ${T.status[c.status] || c.status} · ${T.conf[c.confidence] || "-"}`, c.reason || "", "claim:" + c.id, { status: c.status, lane: "st:inv", claimNode: cn }));
+      inv.children.push(cn);
+    }
+    inv.sub = `명제 ${inv.children.length} · 출처 ${(R.sources || []).length} · 증거 ${(R.evidence || []).length}`;
+
+    const rootClaim = by.claim[v.root] || {};
+    const conv = tn("st:conv", "stage", "⑤ 수렴", `${v.root} ${T.status[v.status] || v.status} · ${T.conf[v.confidence] || "-"}`, null);
+    // every claim's final verdict, as the claim tree mirrored: children on the left feed their parent on the right
+    for (const c of R.claims || []) {
+      const isRoot = c.id === v.root;
+      floats.push(tn("v:" + c.id, "verdict", `${c.id}${isRoot ? " 집계" : ""} · ${T.status[c.status] || c.status} · ${T.conf[c.confidence] || "-"}`, isRoot ? (rootClaim.reason || c.text) : c.text, "claim:" + c.id, { status: c.status, lane: "st:conv", claim: c, crux: !!c.crux }));
+    }
+
+    const concl = tn("st:concl", "stage", "⑥ 결론", `${T.status[v.status] || v.status} · 확신도 ${T.conf[v.confidence] || "-"}`, null);
+    concl.children.push(tn("concl:h", "conclusion", `${T.status[v.status] || v.status} · 확신도 ${T.conf[v.confidence] || "-"}`, v.headline, null, { status: v.status }));
+    concl.children.push(tn("concl:s", "note", "살아남은 주장", v.surviving_claim || "없음", null));
+
+    root.children.push(frame, disc, plan, inv, conv, concl);
+    root.floats = floats;
+    tstate.ready = true;
+    return root;
+  }
+
+  // Every stage is a frame on one shared horizontal midline. Inside a frame the
+  // items hang around that midline (a parent sits level with the middle of its
+  // children), and one claim keeps one row from decomposition through its
+  // investigation to its verdict, so the main arrows run straight across.
+  function layoutTree(root) {
+    const flat = [root], links = [], frames = [], cards = [];
+    const link = (from, to, cls) => { if (from && to) links.push({ a: from, b: to, cls }); };
+    const byKey = (k) => flat.find((n) => n.key === k);
+    const floatsOf = (k) => (root.floats || []).filter((f) => f.lane === k);
+    const open = (n) => n.children.length > 0 && !tstate.collapsed.has(n.key);
+    const depthOf = (n, d = 1) => (open(n) ? Math.max(d, ...n.children.map((c) => depthOf(c, d + 1))) : d);
+    const claimDepth = (c) => (c.parent && by.claim[c.parent] ? 1 + claimDepth(by.claim[c.parent]) : 0);
+
+    // 1. columns: every lane's width follows its depth; lanes run left to right
+    let x = LEFT + NW + LANEGAP;
+    for (const st of root.children) {
+      let cols = Math.max(1, ...st.children.map((c) => depthOf(c)));
+      if (st.key === "st:inv" && floatsOf("st:inv").length) cols += 1;
+      if (st.key === "st:conv") cols = 2;
+      if (st.key === "st:concl") cols = 2;
+      if (st.key === "st:plan") cols = 1;
+      st.x = x + FPAD; st.cols = cols;
+      st.w = st.key === "st:plan" ? CARDW : st.key === "st:conv" ? CARDW + ROOTGAP + NW : (cols - 1) * COLW + NW;
+      x = st.x + st.w + FPAD + (GAP_AFTER[st.key] ?? LANEGAP);
+    }
+    const W = x - (GAP_AFTER[root.children[root.children.length - 1].key] ?? LANEGAP) + LEFT;
+
+    const put = (n, st, depth, parent, nx) => { n.depth = depth; n.parent = parent; n.lane = st.key; n.x = nx ?? st.x + (depth - 1) * COLW; flat.push(n); };
+    const laneNodes = (st) => flat.filter((n) => n.lane === st.key);
+    const centre = (nodes) => {
+      if (!nodes.length) return;
+      const top = Math.min(...nodes.map((n) => n.y)), bottom = Math.max(...nodes.map((n) => n.y + (n.h || NH)));
+      const d = -(top + bottom) / 2;
+      nodes.forEach((n) => (n.y += d));
+    };
+    /** Leaves stack downward; a parent sits at the middle of its children. */
+    const stack = (st, items, y0 = 0) => {
+      let y = y0;
+      const walk = (n, depth, parent) => {
+        put(n, st, depth, parent);
+        if (open(n)) { n.children.forEach((c) => walk(c, depth + 1, n)); n.y = (n.children[0].y + n.children[n.children.length - 1].y) / 2; }
+        else { n.y = y; y += NH + VGAP; }
+      };
+      items.forEach((c) => { walk(c, 1, st); y += BLOCKGAP; });
+      return y;
+    };
+    /** Rows fixed elsewhere (twin) win; otherwise the middle of placed children; the rest stack below. */
+    const placeRest = (st, nodes) => {
+      const free = nodes.filter((n) => n.y == null);
+      if (!free.length) return;
+      const placed = nodes.filter((n) => n.y != null);
+      let y = placed.length ? Math.max(...placed.map((n) => n.y + NH)) + BLOCKGAP : 0;
+      free.forEach((n) => { n.y = y; y += NH + VGAP; });
+    };
+    const mid = (kids) => { const ys = kids.map((k) => k.y).filter((v) => v != null); return ys.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : null; };
+    const S = Object.fromEntries(root.children.map((s) => [s.key, s]));
+
+    root.x = LEFT; root.y = -NH / 2; root.depth = 0; root.parent = null;
+
+    // 2. rows. Investigation first: its claim rows fix the decomposition and verdict rows.
+    for (const k of ["st:frame", "st:disc"]) if (S[k]) { stack(S[k], S[k].children); centre(laneNodes(S[k])); }
+
+    const inv = S["st:inv"];
+    if (inv) {
+      stack(inv, inv.children);
+      // each verdict one column right of the deepest sources, on its claim's row
+      const jx = inv.x + (inv.cols - 1) * COLW;
+      for (const f of floatsOf("st:inv")) {
+        const cn = f.claimNode, feeders = [];
+        if (!open(cn)) feeders.push([cn, "r-supporting"]);
+        else for (const g of cn.children) {
+          const fed = g.children.filter((e) => ["decisive", "supporting", "opposing"].includes(e.role));
+          if (!fed.length) continue;
+          if (!open(g)) feeders.push([g, fed.some((e) => e.role === "decisive") ? "r-decisive" : "r-supporting"]);
+          else fed.forEach((e) => feeders.push([e, `r-${e.role} l-${e.label}`]));
+        }
+        put(f, inv, inv.cols, inv, jx); f.float = true; f.y = cn.y;
+        feeders.forEach(([n, cls]) => link(n, f, "converge " + cls));
+      }
+      centre(laneNodes(inv));
+    }
+
+    const plan = S["st:plan"];
+    if (plan) {
+      // decomposition as one card: the root claim heads it and every other claim is a row
+      // with its own handle, so its arrow leaves the card straight for its investigation
+      let y = 0;
+      for (const head of plan.children) {
+        put(head, plan, 1, plan);
+        Object.assign(head, { h: HEADH, w: CARDW, noFold: true, cardHead: true, y });
+        const top = y;
+        y += HEADH;
+        const walk = (n, d, parent) => {
+          put(n, plan, 1, parent);
+          Object.assign(n, { h: ROWH, w: CARDW, noFold: true, inCard: true, indent: d, y });
+          y += ROWH;
+          n.children.forEach((k) => walk(k, d + 1, n));
+        };
+        head.children.forEach((k) => walk(k, 0, head));
+        cards.push({ x: plan.x, head, h: y - top });
+        y += BLOCKGAP;
+      }
+      centre(laneNodes(plan));
+    }
+
+    const conv = S["st:conv"];
+    if (conv) {
+      // final verdicts as one card (sub-claims indented); the root's aggregate sits beside
+      // it on the midline and gathers short arrows from the root's direct children
+      const fs = floatsOf("st:conv"), rootId = R.verdict.root;
+      const rootF = fs.find((f) => f.claim.id === rootId);
+      const rows = [];
+      let y = 0;
+      for (const c of claimOrder()) {
+        const f = fs.find((x) => x.claim.id === c.id);
+        if (!f || c.id === rootId) continue;
+        put(f, conv, 1, conv, conv.x);
+        Object.assign(f, { float: true, inCard: true, verdictRow: true, h: ROWH, w: CARDW, indent: Math.max(0, claimDepth(c) - 1), feedsRoot: c.parent === rootId, y });
+        y += ROWH;
+        rows.push(f);
+      }
+      if (rows.length) { centre(rows); cards.push({ x: conv.x, head: rows[0], h: rows.length * ROWH }); }
+      if (rootF) {
+        put(rootF, conv, 2, conv, conv.x + CARDW + ROOTGAP);
+        rootF.float = true;
+        rootF.y = -NH / 2;
+        rows.filter((r) => r.feedsRoot).forEach((r) => link(r, rootF, r.crux ? "converge crux" : "converge noncrux"));
+      }
+    }
+
+    const concl = S["st:concl"];
+    if (concl) {
+      const rootV = byKey("v:" + R.verdict.root);
+      concl.children.forEach((c, i) => { put(c, concl, i + 1, concl); c.y = rootV ? rootV.y : -NH / 2; });
+      link(concl.children[0], concl.children[1], "flow");
+    }
+
+    // 3. one flow of arrows through the frames: question -> frame -> searches -> decomposition -> ... -> conclusion
+    const tops = (k) => (S[k] ? S[k].children.filter((n) => n.lane === k) : []);
+    const firstLane = ["st:frame", "st:disc"].find((k) => tops(k).length);
+    if (firstLane) tops(firstLane).forEach((n) => link(root, n, "flow"));
+    if (tops("st:frame").length && tops("st:disc").length) tops("st:frame").forEach((a) => tops("st:disc").forEach((b) => link(a, b, "flow")));
+    const pRoot = byKey("p:" + R.verdict.root);
+    const feedPlan = tops("st:disc").length ? tops("st:disc") : tops("st:frame");
+    feedPlan.forEach((n) => link(n, pRoot, "flow"));
+    for (const c of R.claims || []) {
+      link(byKey("p:" + c.id), byKey("i:" + c.id), "xlane");
+      link(byKey("j:" + c.id), byKey("v:" + c.id), "xlane");
+    }
+    link(byKey("v:" + R.verdict.root), byKey("concl:h"), "xlane crux");
+
+    // 4. shift everything below the top margin and draw a frame round each lane
+    const all = flat.filter((n) => n.y != null);
+    const dy = TOP + FTOP - Math.min(...all.map((n) => n.y));
+    all.forEach((n) => (n.y += dy));
+    for (const st of root.children) {
+      const ns = laneNodes(st);
+      if (!ns.length) continue;
+      const y0 = Math.min(...ns.map((n) => n.y)) - FTOP, y1 = Math.max(...ns.map((n) => n.y + (n.h || NH))) + FPAD;
+      frames.push({ st, x: st.x - FPAD, y: y0, w: st.w + 2 * FPAD, h: y1 - y0 });
+    }
+    const H = Math.max(...frames.map((f) => f.y + f.h), root.y + NH) + 24;
+    return { flat, links, frames, cards: cards.map((c) => ({ x: c.x, y: c.head.y, w: CARDW, h: c.h })), H, W };
+  }
+
+  // Node text is fitted by measured width, not by character count: Hangul and
+  // Latin glyphs differ in width, so counting characters spills out of the box.
+  const measure = document.createElement("canvas").getContext("2d");
+  const fitCache = new Map();
+  let FONTS = null;
+  function fonts() {
+    if (!FONTS) {
+      const cs = getComputedStyle(document.documentElement);
+      const body = cs.getPropertyValue("--font-body").trim();
+      const mono = cs.getPropertyValue("--font-mono").trim();
+      FONTS = { t1: `600 12.5px ${body}`, t2: `12px ${body}`, t3: `11.5px ${body}`, lab: `10.5px ${mono}`, main: `500 13px ${body}`, cap: `10.5px ${mono}` };
+    }
+    return FONTS;
+  }
+  function textW(t, font) { measure.font = font; return measure.measureText(t).width; }
+
+  /** Breaks text into at most `max` lines no wider than `w`, preferring spaces; cut text ends in "…". */
+  function fitLines(text, font, w, max) {
+    const t = String(text ?? "").replace(/\s+/g, " ").trim();
+    const key = font + "|" + w + "|" + max + "|" + t;
+    if (fitCache.has(key)) return fitCache.get(key);
+    const lines = [];
+    let i = 0;
+    while (i < t.length && lines.length < max) {
+      let j = i, space = -1;
+      while (j < t.length && textW(t.slice(i, j + 1), font) <= w) { if (t[j] === " ") space = j; j++; }
+      if (j === i) j = i + 1;
+      if (j < t.length && space > i && lines.length < max - 1) j = space + 1;
+      lines.push(t.slice(i, j).trim());
+      i = j;
+    }
+    if (i < t.length) {
+      let last = lines[lines.length - 1];
+      while (last && textW(last + "…", font) > w) last = last.slice(0, -1);
+      lines[lines.length - 1] = last.trimEnd() + "…";
+    }
+    fitCache.set(key, lines);
+    return lines;
+  }
+
+  function edgePath(a, b) {
+    // a stage header feeds its lane through a bus line down its left side
+    if (a.kind === "stage") return `M${a.x + 13},${a.y + NH} V${b.y + NH / 2} H${b.x - 6}`;
+    const x1 = a.x + (a.w || NW) + 3, y1 = a.y + (a.h || NH) / 2, x2 = b.x - 5, y2 = b.y + (b.h || NH) / 2, mx = x1 + (x2 - x1) / 2;
+    return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+  }
+
+  /** A row of the decomposition card: id, type and crux on a small line, the claim below, a handle on the right edge. */
+  function cardRowSvg(n) {
+    const F = fonts(), c = by.claim[n.key.slice(2)] || {}, w = n.w, h = n.h, x = n.x, y = n.y;
+    const head = !!n.cardHead, ind = head ? 0 : n.indent * 16, vrow = !!n.verdictRow;
+    const lab = head ? `루트 명제 · ${c.id} · ${T.type[c.type] || c.type}`
+      : vrow ? `${c.id} · ${T.status[c.status] || c.status} · ${T.conf[c.confidence] || "-"}${c.crux ? " · 핵심" : ""}`
+      : `${c.id} · ${T.type[c.type] || c.type}${c.crux ? " · 핵심" : ""}`;
+    const lines = fitLines(c.text, F.main, w - 40 - ind, head ? 2 : 1);
+    return `<g class="tnode k-pclaim ${head ? "phead" : "prow"}${vrow ? " vrow" : ""} s-${esc(c.status)}" data-key="${esc(n.key)}" tabindex="0" role="button" aria-label="${esc(lab)}: ${esc(c.text)}">
+      <title>${esc(lab)}
+${esc(c.text)}</title>
+      <rect class="rowbg" x="${x + 1}" y="${y + 1}" width="${w - 2}" height="${h - 1}" rx="${head ? 11 : 0}"/>
+      ${head ? "" : `<line class="rowsep" x1="${x}" x2="${x + w}" y1="${y}" y2="${y}"/>`}
+      ${ind ? `<path class="tree" d="M${x + 2 + ind},${y + 9} V${y + 21} H${x + 9 + ind}"/>` : ""}
+      <text class="lab" x="${x + 14 + ind}" y="${y + 17}">${esc(lab)}</text>
+      ${lines.map((l, i) => `<text class="main" data-w="${w - 40 - ind}" x="${x + 14 + ind}" y="${y + 35 + i * 17}">${esc(l)}</text>`).join("")}
+      <circle class="dot" cx="${x + w - 16}" cy="${y + 14}" r="3.5"/>
+      ${head || vrow ? `<circle class="hd" cx="${x}" cy="${y + h / 2}" r="3"/>` : ""}${!vrow || n.feedsRoot ? `<circle class="hd" cx="${x + w}" cy="${y + h / 2}" r="3"/>` : ""}</g>`;
+  }
+
+  function treeNodeSvg(n) {
+    if (n.inCard || n.cardHead) return cardRowSvg(n);
+    const hasKids = n.children.length > 0, closed = hasKids && tstate.collapsed.has(n.key);
+    const cls = ["tnode", "k-" + n.kind];
+    if (n.status) cls.push("s-" + n.status);
+    if (n.label) cls.push("l-" + n.label);
+    if (n.role) cls.push("r-" + n.role);
+    if (n.side) cls.push("side-" + n.side);
+    // a small kind label, one title line, and under the box a caption: id on the left, counts and fold mark on the right
+    const F = fonts(), nw = n.w || NW, pill = n.kind === "src";
+    const lab = fitLines(n.title, F.lab, nw - 40, 1)[0] || "";
+    const main = fitLines(n.sub, F.main, nw - 30, 1)[0] || "";
+    const right = [n.sub2, hasKids ? (closed ? `▸ ${n.children.length}` : "▾") : ""].filter(Boolean).join("  ");
+    const rightW = right ? textW(right, F.cap) + 12 : 0;
+    const left = n.cap ? fitLines(n.cap, F.cap, nw - rightW - 8, 1)[0] : "";
+    const cx = n.x + nw - 14, cy = n.y + NH / 2, top = n.y + NH + 14;
+    return `<g class="${cls.join(" ")}" data-key="${esc(n.key)}" tabindex="0" role="button" aria-label="${esc(n.title)}: ${esc(n.sub)}"${hasKids ? ` aria-expanded="${!closed}"` : ""}>
+      <title>${esc(n.title)}
+${esc(n.sub)}</title>
+      <rect class="box" x="${n.x}" y="${n.y}" width="${nw}" height="${NH}" rx="${pill ? NH / 2 : 10}"/>
+      <text class="lab" data-w="${nw - 40}" x="${n.x + (pill ? 18 : 13)}" y="${n.y + 17}">${esc(lab)}</text>
+      <text class="main" data-w="${nw - 30}" x="${n.x + (pill ? 18 : 13)}" y="${n.y + 35}">${esc(main)}</text>
+      ${n.kind === "root" || n.kind === "note" ? "" : `<circle class="dot" cx="${cx}" cy="${n.y + 14}" r="3.5"/>`}
+      ${n.kind === "root" ? "" : `<circle class="hd" cx="${n.x}" cy="${cy}" r="3"/>`}<circle class="hd" cx="${n.x + nw}" cy="${cy}" r="3"/>
+      ${left ? `<text class="cap" data-w="${nw - rightW - 8}" x="${n.x + 4}" y="${top}">${esc(left)}</text>` : ""}${right ? `<text class="cap" x="${n.x + nw - 4}" y="${top}" text-anchor="end">${esc(right)}</text>` : ""}</g>`;
+  }
+
+  function drawGraph() {
+    TREE = buildTree();
+    const { flat, links, frames, cards, H, W } = layoutTree(TREE);
+    FLAT = flat;
+    LINKS = links;
+    const edges = links.map((l) => `<path class="tedge link ${l.cls}" data-a="${esc(l.a.key)}" data-b="${esc(l.b.key)}" d="${edgePath(l.a, l.b)}" marker-end="url(#arr)"/>`);
+    for (const n of flat) {
+      if (!n.parent || n.parent.kind === "root" || n.parent.kind === "stage" || n.float || n.inCard) continue;
+      const cls = ["tedge"];
+      if (n.label) cls.push("l-" + n.label);
+      if (n.role) cls.push("r-" + n.role);
+      edges.push(`<path class="${cls.join(" ")}" data-a="${esc(n.parent.key)}" data-b="${esc(n.key)}" d="${edgePath(n.parent, n)}" marker-end="url(#arr)"/>`);
+    }
+    // a frame per stage with its name on a tab in the top-left corner
+    const F = fonts();
+    const frameSvg = frames.map((f) => {
+      const title = f.st.title, sub = f.st.sub || "", tw = textW(title, F.t1), sw = sub ? textW(sub, F.cap) + 14 : 0;
+      const w = Math.min(f.w, tw + sw + 30), h = 30, x = f.x, y = f.y;
+      const tab = `M${x},${y + h} V${y + 18} Q${x},${y} ${x + 18},${y} H${x + w} V${y + h - 10} Q${x + w},${y + h} ${x + w - 10},${y + h} Z`;
+      return `<g class="frame"><rect class="fbox" x="${x}" y="${y}" width="${f.w}" height="${f.h}" rx="18"/><path class="ftab" d="${tab}"/><text class="ft" x="${x + 15}" y="${y + 19.5}">${esc(title)}</text>${sub ? `<text class="fs" x="${x + 15 + tw + 14}" y="${y + 19.5}">${esc(sub)}</text>` : ""}</g>`;
+    });
+    document.getElementById("graph").innerHTML = `<svg id="gsvg" data-w="${W}" data-h="${H}" role="img" aria-label="조사 과정 트리">
+      <defs>
+        <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1,1 L7,4 L1,7" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker>
+      </defs><g id="vp">${frameSvg.join("")}${cards.map((c) => `<rect class="pcard" x="${c.x}" y="${c.y}" width="${c.w}" height="${c.h}" rx="12"/>`).join("")}${edges.join("")}${flat.map(treeNodeSvg).join("")}</g></svg>`;
+    trimOverflow();
+    if (!view.ready) startView();
+    applyView();
+    applyFocus();
+  }
+
+  /** Safety net: web-font subsets can arrive after measuring, so trim any line drawn wider than its room. */
+  function trimOverflow() {
+    document.querySelectorAll("#gsvg text[data-w]").forEach((t) => {
+      const w = +t.dataset.w;
+      if (t.getComputedTextLength() <= w) return;
+      let line = t.textContent.replace(/…$/, "");
+      do { line = line.slice(0, -1).trimEnd(); t.textContent = line + "…"; } while (line && t.getComputedTextLength() > w);
+    });
+  }
+
+  // ---------- pan & zoom ----------
+  // Over the graph the wheel zooms around the cursor and a drag pans; the page
+  // does not scroll. Two fingers pinch on touch screens. The view survives redraws.
+  const view = { x: LEFT, y: TOP, k: 1, ready: false };
+  const KMIN = 0.1, KMAX = 2.5;
+  let dragMoved = false;
+
+  function applyView() {
+    const g = document.getElementById("vp");
+    if (g) g.setAttribute("transform", `translate(${view.x},${view.y}) scale(${view.k})`);
+    const p = document.getElementById("zpct");
+    if (p) p.textContent = Math.round(view.k * 100) + "%";
+    const box = document.getElementById("graphbox");
+    if (box) {
+      // The dots belong to the graph: they shrink with it, so they never outgrow
+      // the nodes, and they fade out once the grid gets dense.
+      const step = 24 * view.k, r = 0.7 * view.k;
+      const alpha = Math.max(0, Math.min(1, (step - 9) / 9));
+      if (alpha === 0 || r < 0.2) box.style.backgroundImage = "none";
+      else {
+        box.style.backgroundImage = `radial-gradient(circle, color-mix(in srgb, var(--dot) ${Math.round(alpha * 100)}%, transparent) ${r.toFixed(2)}px, transparent ${(r + 0.5).toFixed(2)}px)`;
+        box.style.backgroundSize = `${step}px ${step}px`;
+        box.style.backgroundPosition = `${view.x}px ${view.y}px`;
+      }
+    }
+  }
+  function zoomAt(px, py, k) {
+    k = Math.min(KMAX, Math.max(KMIN, k));
+    view.x = px - (px - view.x) * (k / view.k);
+    view.y = py - (py - view.y) * (k / view.k);
+    view.k = k;
+    applyView();
+  }
+  function zoomCenter(k) { const box = document.getElementById("graphbox"); zoomAt(box.clientWidth / 2, box.clientHeight / 2, k); }
+  /** First view: the start of the flow, the midline across the middle of the box. */
+  function startView() {
+    const box = document.getElementById("graphbox"); if (!box || !box.clientWidth) return;
+    view.k = 0.85; view.x = 8; view.y = box.clientHeight / 2 - (TREE.y + NH / 2) * view.k; view.ready = true;
+  }
+  /** The graph box fills the window (or goes back), then fits the whole graph. */
+  function toggleMax(on) {
+    const box = document.getElementById("graphbox"); if (!box) return;
+    const max = on ?? !box.classList.contains("max");
+    box.classList.toggle("max", max);
+    document.body.classList.toggle("graph-max", max);
+    const b = document.getElementById("z-max");
+    if (b) b.textContent = max ? "⤡ 원래대로" : "⤢ 크게 보기";
+    requestAnimationFrame(fitView);
+  }
+
+  function fitView() {
+    const box = document.getElementById("graphbox"), svg = document.getElementById("gsvg"); if (!box || !svg) return;
+    const W = +svg.dataset.w, H = +svg.dataset.h;
+    view.k = Math.min(1, Math.max(KMIN, Math.min((box.clientWidth - 24) / W, (box.clientHeight - 56) / H)));
+    view.x = (box.clientWidth - W * view.k) / 2; view.y = 12;
+    applyView();
+  }
+  /** Moves the view so the node is in sight, beside the drawer when it is open. */
+  function revealKey(key) {
+    const n = FLAT.find((x) => x.key === key), box = document.getElementById("graphbox"); if (!n || !box) return;
+    const r = box.getBoundingClientRect(), tr = document.getElementById("trace");
+    let right = r.width;
+    if (tr && !tr.hidden) { const d = tr.getBoundingClientRect(); if (d.left < r.right && d.left > r.left + 240) right = d.left - r.left - 8; }
+    const sx = view.x + n.x * view.k, sy = view.y + n.y * view.k;
+    const nw = n.w || NW;
+    if (sx >= 8 && sy >= 8 && sx + nw * view.k <= right - 8 && sy + NH * view.k <= r.height - 8) return;
+    view.x = right / 2 - (n.x + Math.min(nw, right / view.k) / 2) * view.k;
+    view.y = r.height / 2 - (n.y + NH / 2) * view.k;
+    applyView();
+  }
+
+  function wirePanZoom() {
+    const box = document.getElementById("graphbox");
+    box.addEventListener("wheel", (ev) => {
+      ev.preventDefault();
+      const r = box.getBoundingClientRect();
+      const dy = ev.deltaMode === 1 ? ev.deltaY * 16 : ev.deltaY;
+      zoomAt(ev.clientX - r.left, ev.clientY - r.top, view.k * Math.exp(-dy * (ev.ctrlKey ? 0.01 : 0.0022)));
+    }, { passive: false });
+    const pts = new Map();
+    let start = null, pinch = null;
+    const seed = () => { const [q] = pts.values(); start = q ? { x: q.x, y: q.y, vx: view.x, vy: view.y } : null; };
+    box.addEventListener("pointerdown", (ev) => {
+      if (ev.target.closest(".zoombar, .gstats") || ev.button > 0) return;
+      pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      dragMoved = false;
+      if (pts.size === 1) seed();
+      if (pts.size === 2) { const [p1, p2] = pts.values(); pinch = { d: Math.hypot(p1.x - p2.x, p1.y - p2.y) || 1, k: view.k }; }
+    });
+    box.addEventListener("pointermove", (ev) => {
+      if (!pts.has(ev.pointerId)) return;
+      pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (pinch && pts.size === 2) {
+        const [p1, p2] = pts.values(), r = box.getBoundingClientRect();
+        zoomAt((p1.x + p2.x) / 2 - r.left, (p1.y + p2.y) / 2 - r.top, pinch.k * Math.hypot(p1.x - p2.x, p1.y - p2.y) / pinch.d);
+        dragMoved = true;
+        return;
+      }
+      if (!start) return;
+      const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
+      if (!dragMoved && Math.hypot(dx, dy) < 4) return;
+      if (!dragMoved) { dragMoved = true; box.setPointerCapture(ev.pointerId); box.classList.add("panning"); }
+      view.x = start.vx + dx; view.y = start.vy + dy;
+      applyView();
+    });
+    const end = (ev) => {
+      pts.delete(ev.pointerId);
+      if (pts.size < 2) pinch = null;
+      if (!pts.size) box.classList.remove("panning");
+      seed();
+    };
+    box.addEventListener("pointerup", end);
+    box.addEventListener("pointercancel", end);
+    document.getElementById("z-in").addEventListener("click", () => zoomCenter(view.k * 1.25));
+    document.getElementById("z-out").addEventListener("click", () => zoomCenter(view.k / 1.25));
+    document.getElementById("zpct").addEventListener("click", () => zoomCenter(1));
+    document.getElementById("z-fit").addEventListener("click", fitView);
+    document.getElementById("z-max").addEventListener("click", () => toggleMax());
+  }
+
+  /** Keys to keep lit: the chosen nodes, their ancestors and their visible subtrees. */
+  function litKeys(keys) {
+    const keep = new Set();
+    const byKey = Object.fromEntries(FLAT.map((n) => [n.key, n]));
+    const down = (n) => { keep.add(n.key); if (!tstate.collapsed.has(n.key)) n.children.forEach(down); };
+    for (const k of keys) {
+      let n = byKey[k]; if (!n) continue;
+      down(n);
+      while (n) { keep.add(n.key); n = n.parent; }
+    }
+    // follow cross arrows downstream: evidence -> verdict -> convergence -> conclusion
+    const queue = [...keep];
+    while (queue.length) {
+      const k = queue.shift();
+      for (const l of LINKS) if (l.a.key === k && !keep.has(l.b.key)) { keep.add(l.b.key); queue.push(l.b.key); if (l.b.parent) keep.add(l.b.parent.key); }
+    }
+    return keep;
+  }
+
+  function keysForRef(ref) { return FLAT.filter((n) => n.ref === ref).map((n) => n.key); }
+
+  /** Opens every collapsed branch that hides a node with this ref. */
+  function expandToRef(ref) {
+    const walk = (n, path) => { if (n.ref === ref) path.forEach((p) => tstate.collapsed.delete(p.key)); n.children.forEach((c) => walk(c, [...path, n])); };
+    if (TREE) walk(TREE, []);
+  }
+
+  function applyFocus() {
+    const svg = document.getElementById("gsvg"); if (!svg) return;
+    const keys = state.focus.filter((k) => FLAT.some((n) => n.key === k));
+    const lit = keys.length ? litKeys(keys) : null;
+    svg.classList.toggle("focus", !!lit);
+    svg.querySelectorAll(".tnode").forEach((g) => { g.classList.toggle("dim", !!lit && !lit.has(g.dataset.key)); g.classList.toggle("sel", keys.includes(g.dataset.key)); });
+    svg.querySelectorAll(".tedge").forEach((p) => p.classList.toggle("dim", !!lit && !(lit.has(p.dataset.a) && lit.has(p.dataset.b))));
+  }
+
+  // ---------- trace ----------
+  function evBlock(e, withClaim) {
+    const s = by.src[e.source] || {};
+    const search = (s.found_by || []).map((id) => by.search[id]).filter(Boolean)[0];
+    const lead = s.via_lead ? by.lead[s.via_lead] : null;
+    const judges = (e.judges || []).map((j) => `${j.by.replace(/^claude-/, "").replace(/-5-5$/, "")}: ${T.label[j.label] || j.label}`).join(" · ");
+    return `<div class="ev r-${esc(e.role)}">
+      <div class="row"><span class="chip l-${esc(e.label)} strong">${esc(T.label[e.label] || e.label)}</span><span class="chip">${esc(T.role[e.role] || e.role)}</span>${withClaim ? `<button class="chip" data-go="claim:${esc(e.claim)}">${esc(e.claim)}</button>` : ""}<span class="mono muted">${esc(e.id)}</span></div>
+      ${e.quote ? `<div class="quote l-${esc(e.label)}">${esc(e.quote)}</div>${e.quote_ok ? '<span class="ok">✓ 보관 원문과 일치</span>' : ""}` : ""}
+      <dl class="kv">
+        <dt>출처</dt><dd><button class="chip" data-go="src:${esc(s.id)}">${esc(s.id)}</button> ${esc(T.kind[s.kind] || s.kind)} · ${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(clip(s.title || s.host, 48))}</a>` : esc(s.title)}</dd>
+        <dt>접근</dt><dd>${esc(s.access === "full_text" ? "전문" : s.access === "abstract" ? "초록만" : s.access || "-")}</dd>
+        ${search ? `<dt>찾은 검색</dt><dd>${esc(T.side[search.side] || search.side)} · ${esc(T.lang[search.lang] || search.lang)} · <span class="mono">${esc(clip(search.query, 90))}</span></dd>` : `<dt>찾은 검색</dt><dd class="muted">단서의 원출처 추적으로 찾음</dd>`}
+        ${lead ? `<dt>단서</dt><dd><span class="chip lead">${esc(lead.id)}</span> ${esc(clip(lead.text || lead.url, 90))}</dd>` : ""}
+        ${judges ? `<dt>판정자</dt><dd>${esc(judges)}${e.agreed === false ? " (갈림)" : ""}</dd>` : ""}
+      </dl>
+      ${e.rationale ? `<span class="small muted">${esc(clip(e.rationale, 220))}</span>` : ""}
+    </div>`;
+  }
+
+  function showTrace() {
+    const el = document.getElementById("trace");
+    el.hidden = !state.sel;
+    el.parentElement.classList.toggle("has-trace", !!state.sel);
+    el.scrollTop = 0;
+    if (!state.sel) {
+      el.innerHTML = `<span class="eyebrow">역추적</span><h3>노드나 결론 문장을 고르세요</h3>
+        <p class="empty">명제를 고르면 판정 사유 → 결정 근거 인용 → 출처 → 그 출처를 찾은 검색 → 그 검색을 하게 만든 단서 순서로 거슬러 올라갑니다.</p>`;
+      return;
+    }
+    const [t, k] = state.sel.split(":");
+    if (t === "claim") {
+      const c = by.claim[k];
+      const evs = (by.evByClaim[k] || []);
+      const order = ["decisive", "opposing", "supporting", "related"];
+      const shown = evs.filter((e) => order.includes(e.role)).sort((a, b) => order.indexOf(a.role) - order.indexOf(b.role));
+      const kids = (R.claims || []).filter((x) => x.parent === k);
+      el.innerHTML = `<span class="eyebrow">역추적 · 명제</span>
+        <div class="row"><span class="mono" style="font-weight:600">${esc(c.id)}</span><span class="chip s-${esc(c.status)} strong">${esc(T.status[c.status])} · ${esc(T.conf[c.confidence] || "-")}</span>${c.crux ? '<span class="chip strong">핵심 쟁점</span>' : ""}</div>
+        <h3>${esc(c.text)}</h3>
+        <div class="step"><span class="dot">1</span><div class="body"><span class="k">판정 사유 (규칙이 계산)</span><span>${esc(c.reason)}</span>${(c.basis || []).length ? `<ul class="basis">${c.basis.map((b) => `<li>${esc(b)}</li>`).join("")}</ul>` : ""}</div></div>
+        ${kids.length ? `<div class="step"><span class="dot">2</span><div class="body"><span class="k">자식 명제</span><span class="row">${kids.map((x) => `<button class="chip s-${esc(x.status)}" data-go="claim:${esc(x.id)}">${esc(x.id)} ${esc(T.status[x.status])}</button>`).join("")}</span></div></div>` : ""}
+        ${c.pass_if || c.kill_if ? `<div class="step"><span class="dot">${kids.length ? 3 : 2}</span><div class="body"><span class="k">미리 정한 통과·폐기 조건</span>${c.pass_if ? `<span class="small"><b>통과</b> ${esc(clip(c.pass_if, 240))}</span>` : ""}${c.kill_if ? `<span class="small"><b>폐기</b> ${esc(clip(c.kill_if, 240))}</span>` : ""}</div></div>` : ""}
+        ${(c.from_families || []).length ? `<div class="step"><span class="dot">◆</span><div class="body"><span class="k">이 명제를 만든 단서 묶음</span>${c.from_families.map((f) => by.fam[f] ? `<div class="row" style="flex-wrap:nowrap;align-items:baseline"><button class="chip lead" data-go="fam:${esc(f)}">${esc(f)}</button><span class="small">${esc(clip(by.fam[f].text, 90))}</span></div>` : "").join("")}</div></div>` : ""}
+        <span class="k eyebrow">근거 ${shown.length}건${evs.length > shown.length ? ` (판정 제외 ${evs.length - shown.length}건은 그래프 토글로)` : ""}</span>
+        <div class="evlist">${shown.map((e) => evBlock(e, false)).join("") || '<span class="empty">이 명제는 자식 판정을 집계했습니다.</span>'}</div>`;
+    } else if (t === "src") {
+      const s = by.src[k];
+      const evs = by.evBySrc[k] || [];
+      el.innerHTML = `<span class="eyebrow">역추적 · 출처</span>
+        <h3>${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title || s.host)}</a>` : esc(s.title)}</h3>
+        <dl class="kv"><dt>종류</dt><dd>${esc(T.kind[s.kind] || s.kind)}</dd><dt>호스트</dt><dd>${esc(s.host)}</dd><dt>접근</dt><dd>${esc(s.access)}</dd></dl>
+        <div class="evlist">${evs.map((e) => evBlock(e, true)).join("")}</div>`;
+    } else if (t === "fam") {
+      const f = by.fam[k];
+      const leads = by.leadsByFam[k] || [];
+      const checks = (R.origin_checks || []).filter((o) => o.family === k);
+      el.innerHTML = `<span class="eyebrow">역추적 · 돌던 주장</span><h3>${esc(f.text)}</h3>
+        <dl class="kv"><dt>글</dt><dd>${esc(f.posts)}건, 원출처 ${esc(f.origin_groups)}곳</dd><dt>플랫폼</dt><dd>${esc((f.platforms || []).join(", "))}</dd></dl>
+        <span class="k eyebrow">이 주장에서 나온 명제</span><span class="row">${(R.claims || []).filter((c) => (c.from_families || []).includes(k)).map((c) => `<button class="chip s-${esc(c.status)}" data-go="claim:${esc(c.id)}">${esc(c.id)} ${esc(T.status[c.status])}</button>`).join("")}</span>
+        ${checks.length ? `<span class="k eyebrow">원출처 대조</span>${checks.map((o) => `<div class="ev"><span class="chip ${o.fidelity === "faithful" ? "l-supports" : "l-refutes"}">${esc(T.fidelity[o.fidelity] || o.fidelity)}</span><div class="quote">${esc(o.post)}</div><div class="quote l-supports">${esc(o.origin)}</div></div>`).join("")}` : ""}
+        <span class="k eyebrow">글 ${leads.length}건</span>${leads.map((l) => `<div class="small"><span class="chip lead">${esc(l.platform)}</span> ${l.url ? `<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(clip(l.text || l.url, 90))}</a>` : esc(l.text)}</div>`).join("")}`;
+    } else if (t === "search") {
+      const s = by.search[k];
+      const found = (R.sources || []).filter((x) => (x.found_by || []).includes(k));
+      el.innerHTML = `<span class="eyebrow">역추적 · 검색</span><h3 class="mono" style="font-size:13px;font-weight:500">${esc(s.query)}</h3>
+        <dl class="kv"><dt>쪽</dt><dd>${esc(T.side[s.side] || s.side)}</dd><dt>언어</dt><dd>${esc(T.lang[s.lang] || s.lang)}</dd><dt>채널</dt><dd>${esc(s.channel)}</dd><dt>결과</dt><dd>${esc(s.hits ?? "-")}건</dd>${s.claim ? `<dt>명제</dt><dd><button class="chip" data-go="claim:${esc(s.claim)}">${esc(s.claim)}</button></dd>` : ""}</dl>
+        <span class="k eyebrow">이 검색으로 읽은 출처 ${found.length}건</span>${found.map((x) => `<div class="small"><button class="chip" data-go="src:${esc(x.id)}">${esc(x.id)}</button> ${esc(clip(x.title, 70))}</div>`).join("") || '<span class="empty">없음</span>'}`;
+    } else if (t === "ev") {
+      const e = by.ev[k];
+      el.innerHTML = `<span class="eyebrow">역추적 · 증거</span>${evBlock(e, true)}`;
+    } else if (t === "lead") {
+      const l = by.lead[k];
+      el.innerHTML = `<span class="eyebrow">역추적 · 단서</span><h3>${esc(l.text || l.url)}</h3>${l.url ? `<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.url)}</a>` : ""}${l.family ? `<button class="chip lead" data-go="fam:${esc(l.family)}">${esc(l.family)}</button>` : ""}`;
+    }
+    el.insertAdjacentHTML("afterbegin", '<button class="toggle close" id="t-close" type="button">닫기</button>');
+    el.querySelector("#t-close").addEventListener("click", clearSelection);
+    el.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", (ev) => { ev.stopPropagation(); select(b.dataset.go); }));
+  }
+
+  // ---------- sources table ----------
+  function drawSources(kind) {
+    const rows = (R.sources || []).filter((s) => kind === "all" || s.kind === kind).map((s) => {
+      const evs = by.evBySrc[s.id] || [];
+      const search = (s.found_by || []).map((id) => by.search[id]).filter(Boolean)[0];
+      return `<tr><td><button class="chip" data-go="src:${esc(s.id)}">${esc(s.id)}</button> ${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(clip(s.title || s.host, 70))}</a>` : esc(clip(s.title, 70))}<div class="small muted">${esc(s.host)}</div></td>
+        <td>${esc(T.kind[s.kind] || s.kind)}</td><td>${esc(s.access === "full_text" ? "전문" : s.access === "abstract" ? "초록" : s.access || "-")}</td>
+        <td class="small">${search ? `${esc(T.side[search.side] || "")} · <span class="mono">${esc(clip(search.query, 40))}</span>` : '<span class="muted">원출처 추적</span>'}</td>
+        <td><span class="row">${evs.map((e) => `<span class="chip l-${esc(e.label)}">${esc(e.claim)} ${esc(T.role[e.role]?.split("(")[0] || e.role)}</span>`).join("")}</span></td></tr>`;
+    });
+    document.getElementById("srcrows").innerHTML = rows.join("") || `<tr><td colspan="5" class="empty">해당 종류의 출처가 없습니다.</td></tr>`;
+    document.querySelectorAll("#srcrows [data-go]").forEach((b) => b.addEventListener("click", () => select(b.dataset.go)));
+  }
+
+  // ---------- interaction ----------
+  function select(id, extraRefs, key) {
+    state.sel = id; state.selKey = key || null;
+    if (id && !key) {
+      if (id.startsWith("src:") && !state.showAll && !visibleEv().some((e) => "src:" + e.source === id)) { state.showAll = true; const t = document.getElementById("t-all"); if (t) t.setAttribute("aria-pressed", "true"); }
+      [id, ...(extraRefs || [])].forEach(expandToRef);
+      drawGraph();
+    }
+    state.focus = key ? [key] : [id, ...(extraRefs || [])].flatMap(keysForRef);
+    applyFocus();
+    showTrace();
+    const k = state.focus[0];
+    if (k) revealKey(k);
+  }
+
+  function clearSelection() {
+    state.sel = null; state.selKey = null; state.focus = [];
+    document.querySelectorAll(".sent").forEach((x) => x.classList.remove("on"));
+    applyFocus();
+    showTrace();
+  }
+
+  /** Pressing a picked node again lets it go; when nothing is left picked, the whole selection clears. */
+  function unpick(key) {
+    // a claim appears in several stages; letting one copy go lets the claim go
+    const ref = FLAT.find((x) => x.key === key)?.ref;
+    state.focus = state.focus.filter((k) => k !== key && !(ref && FLAT.find((x) => x.key === k)?.ref === ref));
+    if (!state.focus.length) return clearSelection();
+    const next = FLAT.find((x) => x.key === state.focus[0]);
+    state.selKey = next.key; state.sel = next.ref || null;
+    applyFocus();
+    showTrace();
+  }
+
+  function wire() {
+    const onNode = (g) => {
+      const n = FLAT.find((x) => x.key === g.dataset.key); if (!n) return;
+      if (state.focus.includes(n.key)) return unpick(n.key);
+      if (n.children.length && !n.noFold) {
+        // a closed branch opens; an open branch without a record of its own closes
+        if (tstate.collapsed.has(n.key)) tstate.collapsed.delete(n.key);
+        else if (!n.ref) tstate.collapsed.add(n.key);
+        drawGraph();
+      }
+      if (n.ref) select(n.ref, null, n.key); else { state.sel = null; state.selKey = n.key; state.focus = [n.key]; applyFocus(); showTrace(); }
+    };
+    document.getElementById("graph").addEventListener("click", (ev) => { if (dragMoved) return; const g = ev.target.closest(".tnode"); if (g) onNode(g); });
+    wirePanZoom();
+    document.getElementById("graph").addEventListener("keydown", (ev) => { if (ev.key !== "Enter" && ev.key !== " ") return; const g = ev.target.closest(".tnode"); if (g) { ev.preventDefault(); onNode(g); } });
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Escape") return;
+      if (state.focus.length || state.sel) clearSelection();
+      else if (document.body.classList.contains("graph-max")) toggleMax(false);
+    });
+    document.getElementById("t-open").addEventListener("click", () => { tstate.collapsed.clear(); drawGraph(); });
+    document.getElementById("t-shut").addEventListener("click", () => { tstate.collapsed.clear(); tstate.ready = false; drawGraph(); });
+    document.getElementById("t-all").addEventListener("click", (ev) => { state.showAll = !state.showAll; ev.currentTarget.setAttribute("aria-pressed", String(state.showAll)); drawGraph(); });
+    document.getElementById("t-clear").addEventListener("click", clearSelection);
+    // citations: a number and its source light each other up
+    const hl = (n, on) => {
+      document.querySelectorAll(`.cite[data-n="${n}"], .srcitem[data-n="${n}"]`).forEach((x) => x.classList.toggle("hl", on));
+      document.querySelectorAll(".sent").forEach((x) => x.classList.toggle("hl", on && !!x.querySelector(`.cite[data-n="${n}"]`)));
+    };
+    document.querySelectorAll(".cite, .srcitem").forEach((el) => {
+      el.addEventListener("mouseenter", () => { hl(el.dataset.n, true); if (el.classList.contains("cite")) document.querySelector(`.srcitem[data-n="${el.dataset.n}"]`)?.scrollIntoView({ block: "nearest" }); });
+      el.addEventListener("mouseleave", () => hl(el.dataset.n, false));
+    });
+    document.querySelectorAll(".cite").forEach((b) => b.addEventListener("click", (ev) => { ev.stopPropagation(); select(document.querySelector(`.srcitem[data-n="${b.dataset.n}"]`).dataset.go); }));
+    document.querySelectorAll(".srcitem").forEach((c) => c.addEventListener("keydown", (ev) => { if (ev.key === "Enter") select(c.dataset.go); }));
+    document.querySelectorAll(".sent").forEach((li) => {
+      const act = () => {
+        if (li.classList.contains("on")) return clearSelection();
+        document.querySelectorAll(".sent").forEach((x) => x.classList.toggle("on", x === li));
+        const s = R.verdict.sentences[+li.dataset.sent];
+        const refs = s.refs || [];
+        select("claim:" + (refs[0] || R.verdict.root), refs.slice(1).map((c) => "claim:" + c));
+      };
+      li.addEventListener("click", act);
+      li.addEventListener("keydown", (ev) => { if (ev.key === "Enter") act(); });
+    });
+    document.querySelectorAll("#app [data-go]").forEach((b) => b.addEventListener("click", () => select(b.dataset.go)));
+    document.querySelectorAll(".card").forEach((c) => c.addEventListener("keydown", (ev) => { if (ev.key === "Enter") select(c.dataset.go); }));
+    document.querySelectorAll("#kindf .toggle").forEach((b) => b.addEventListener("click", () => {
+      document.querySelectorAll("#kindf .toggle").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      drawSources(b.dataset.kind);
+    }));
+  }
+
+  // a built report carries its data inside; the template on its own reads report.json beside it
+  const embedded = document.getElementById("report-data");
+  const load = embedded ? Promise.resolve(JSON.parse(embedded.textContent)) : fetch("./report.json").then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+  load.then((data) => {
+    if (data.schema !== "inquiry/report@0") throw new Error("schema " + data.schema);
+    R = data; by = index(R);
+    document.title = "inquiry · " + clip(R.meta.question, 40);
+    render();
+    if (document.fonts) {
+      // Korean web fonts load in pieces as glyphs appear; measure again when a piece lands
+      let refit = 0;
+      const again = () => { clearTimeout(refit); refit = setTimeout(() => { fitCache.clear(); drawGraph(); }, 120); };
+      document.fonts.ready.then(again);
+      document.fonts.addEventListener("loadingdone", again);
+    }
+  }).catch((e) => {
+    document.getElementById("app").innerHTML = `<div class="err">보고서 데이터(report.json)를 읽지 못했습니다: ${esc(e.message)}. 이 페이지는 report.json과 함께 게시해야 합니다.</div>`;
+  });
+})();
+</script>

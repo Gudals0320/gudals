@@ -1,0 +1,8 @@
+{
+  "name": "inquiry-engine",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  }
+}
