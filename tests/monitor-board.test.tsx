@@ -1,0 +1,318 @@
+import { expect, mock, test } from 'claude-code/testing'
+import type { On } from 'claude-code'
+
+import { buildIslands, changedIslands } from '../hooks/monitor/register'
+import { DASH_TILE_PX, dashTilePiece, escapeHtml, glintPiece, gutterPiece, gutterWidth, lineCount } from '../hooks/monitor/pieces'
+import type { MonitorRow } from '../types'
+
+const MIN = 60_000
+const NOW = Date.UTC(2026, 9, 22, 14, 0)
+
+const row = (id: string, rest: Partial<MonitorRow>): MonitorRow => ({
+  id, title: id, cwd: 'C:/w/app', isRunning: false, lastActivityAt: NOW - 5 * MIN, state: 'idle', since: NOW - 5 * MIN, warnings: [], ...rest,
+})
+
+test('islands rise by their most pressing session, then by the latest activity', () => {
+  const islands = buildIslands(
+    [
+      row('old', { cwd: 'C:/w/old', lastActivityAt: NOW - 200 * MIN, since: NOW - 200 * MIN }),
+      row('calm', { cwd: 'C:/w/calm', lastActivityAt: NOW - 30 * MIN, since: NOW - 30 * MIN }),
+      row('busy', { cwd: 'C:/w/busy', state: 'working' }),
+      // Stopped three hours ago, but its two shells still run: not live, and not dormant either.
+      row('bg', { cwd: 'C:/w/bg', state: 'background', lastActivityAt: NOW - 180 * MIN, since: NOW - 180 * MIN, tasks: [
+        { kind: 'monitor', label: 'eval.log', startedAt: NOW - 170 * MIN },
+        { kind: 'command', label: 'npm run eval', startedAt: NOW - 175 * MIN },
+      ] }),
+      row('ask', { cwd: 'C:/w/ask', state: 'waiting', since: NOW - 3 * MIN }),
+      row('tree', { cwd: 'C:/w/ask/.claude/worktrees/spike', parentId: 'ask' }),
+    ],
+    NOW,
+  )
+  expect(islands.map(one => [one.name, one.tier])).toEqual([
+    ['ask', 'hot'],
+    ['busy', 'live'],
+    ['calm', 'warm'],
+    ['bg', 'warm'],
+    ['old', 'cold'],
+  ])
+  expect(islands[0]?.why).toBe('나를 기다림 · 3분째')
+  expect(islands[0]?.rows.length).toBe(2)
+  expect(islands[1]?.why).toBe('실행 중')
+  expect(islands[3]?.why).toBe('백그라운드 2')
+})
+
+test('a prompt a hook dropped lifts its island and says HOOK', () => {
+  const islands = buildIslands([row('drop', { cwd: 'C:/w/t', state: 'waiting', waitKind: 'blocked', waitText: 'transprompt: 승인 대기' })], NOW)
+  expect([islands[0]?.tier, islands[0]?.best, islands[0]?.why]).toEqual(['hot', 'blocked', 'HOOK'])
+})
+
+test("a sub-session lives in the island of the session at the top of its line, wherever its folder is", () => {
+  const islands = buildIslands(
+    [
+      row('top', { cwd: 'C:/w/lecture-artifact' }),
+      row('sub', { cwd: 'C:/w/lecture-artifact/VLSI', parentId: 'top' }),
+      row('subsub', { cwd: 'C:/elsewhere/tool', parentId: 'sub' }),
+      // A parent the list does not hold: the session keeps its own folder.
+      row('orphan', { cwd: 'C:/w/other', parentId: 'gone' }),
+    ],
+    NOW,
+  )
+  expect(islands.map(one => [one.name, one.rows.length]).sort()).toEqual([
+    ['lecture-artifact', 3],
+    ['other', 1],
+  ])
+})
+
+test('sessions started without a folder share one island', () => {
+  const islands = buildIslands([row('a', { cwd: 'C:/d/scratch-2026-10-22-aaaaaa' }), row('b', { cwd: 'C:/d/scratch-2026-10-22-bbbbbb' })], NOW)
+  expect(islands.map(one => [one.name, one.rows.length])).toEqual([['폴더 없음', 2]])
+})
+
+test('only a state change marks its island, with the colour of the new state', () => {
+  const before = [row('a', {}), row('b', { cwd: 'C:/w/b', state: 'working' })]
+  const after = [row('a', { state: 'waiting', title: 'renamed' }), row('b', { cwd: 'C:/w/b', state: 'background', activity: 'new line' }), row('c', { cwd: 'C:/w/c' })]
+  // b stopped and left a shell running: that is a change too.
+  expect([...changedIslands(before, after)]).toEqual([
+    ['C:/w/app', 'waiting'],
+    ['C:/w/b', 'other'],
+    ['C:/w/c', 'other'],
+  ])
+})
+
+test('pictures: the gutter draws a child behind the dashed teal rail, and dots move', () => {
+  expect(gutterPiece('paused', 0).svg).not.toContain('stroke-dasharray')
+  const child = gutterPiece('working', 2)
+  expect(child.width).toBe(gutterWidth(2))
+  expect(child.svg).toContain('stroke-dasharray="3 3"')
+  expect(child.svg).toContain('<animate attributeName="opacity"')
+  expect(gutterPiece('waiting', 0).svg).toContain('<animate attributeName="r"')
+  expect(glintPiece().svg).toContain('<animate attributeName="x"')
+  // A dash tile holds whole dashes, so tiles side by side read as one line.
+  expect(DASH_TILE_PX % 7).toBe(0)
+  expect(dashTilePiece('#fff').svg).toContain('stroke-dasharray="4 3"')
+  expect(escapeHtml(`'`)).toBe('&#39;')
+  expect(lineCount('가'.repeat(30), 300, 12)).toBe(2)
+})
+
+const PANE = {
+  plugin: 'gudals',
+  component: 'Pane',
+  requestId: 'monitor',
+  surface: 'desktop',
+  props: { title: 'Monitor', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
+} as const
+
+const ID = {
+  ask: 'local_11111111-1111-4111-8111-111111111111',
+  vlsi: 'local_22222222-2222-4222-8222-222222222222',
+  parent: 'local_33333333-3333-4333-8333-333333333333',
+  spike: 'local_44444444-4444-4444-8444-444444444444',
+  lms: 'local_55555555-5555-4555-8555-555555555555',
+}
+
+const wrapUp = JSON.stringify({
+  type: 'assistant',
+  message: {
+    content: [
+      {
+        type: 'tool_use',
+        name: 'mcp__ccd_turn__wrap_up',
+        input: { ask: '어느 시안으로 갈까요?', actions: [{ label: 'A + C피크', message: 'A + C피크로 가자.' }, { label: '다른 걸로' }] },
+      },
+    ],
+  },
+})
+
+const RUN = `"C:\\Program Files\\Git\\bin\\bash.exe" -c "source /c/x.sh && eval 'npm run eval:run -- --batch evM2 > log 2>&1' < /dev/null"`
+
+// One board's worth of sessions and the machine around them; `vlsi` lets a test move a session
+// and change what its transcript shows.
+function stage(on: On, vlsi: { running: boolean; events?: string; isAskClosed?: boolean }) {
+  const clock = mock.clock(on, { now: NOW })
+  mock.store(on)
+  const sent: { session: string; message: string }[] = []
+  const opened: string[] = []
+  on('command.register', () => ({ value: { command: 'monitor' } }))
+  on('tool.register', () => ({ value: { tool: 'mcp__gudals__monitor_snapshot' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('env.get', (_, e) => ({ value: e.name === 'USERPROFILE' ? 'C:\\Users\\me' : undefined }))
+  on('fs.list', () => ({ value: [{ name: '1.json', kind: 'file', size: 1, mtimeMs: 1, isLink: false }, { name: '2.json', kind: 'file', size: 1, mtimeMs: 1, isLink: false }] }))
+  on('fs.read', (_, e) => ({
+    value: String(e.path).endsWith('1.json')
+      ? JSON.stringify({ pid: 1, hostSessionId: ID.ask, sessionId: 'cli-ask', cwd: 'C:\\d\\scratch-2026-10-22-77f361', status: 'idle' })
+      : JSON.stringify({ pid: 2, hostSessionId: ID.parent, sessionId: 'cli-parent', cwd: 'C:\\w\\inquiry', status: 'idle' }),
+  }))
+  // Answering the box in the session moves its transcript on; the radar reads it again.
+  on('fs.stat', () => ({ value: { kind: 'file', size: 10, mtimeMs: vlsi.isAskClosed ? 6 : 5, isLink: false } }))
+  on('process.run', (_, e) => {
+    const argv = [...e.argv]
+    if (argv[0] === 'cmd.exe') opened.push(String(argv[4]))
+    const script = String(argv[4] ?? '')
+    const stdout = script.includes('Select-String')
+      ? script.includes('cli-ask') && !vlsi.isAskClosed ? wrapUp : ''
+      : JSON.stringify([
+          { p: 1, pp: 0, n: 'claude.exe' },
+          { p: 2, pp: 0, n: 'claude.exe' },
+          { p: 9, pp: 2, n: 'bash.exe', c: RUN, t: new Date(NOW - 20 * MIN).toISOString() },
+        ])
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('mcp.call', (_, e) => {
+    if (e.tool === 'send_message') {
+      sent.push({ session: String(e.args?.session_id), message: String(e.args?.message) })
+      return { value: { content: [{ type: 'text', text: 'delivered' }], isError: false } }
+    }
+    const iso = (min: number) => new Date(NOW - min * MIN).toISOString()
+    const sessions = [
+      { sessionId: ID.ask, title: 'Gudals transprompt', cwd: 'C:\\d\\scratch-2026-10-22-77f361', isRunning: false, lastActivityAt: iso(2) },
+      { sessionId: ID.vlsi, title: 'VLSI 교안', cwd: 'C:\\w\\lecture-artifact', isRunning: vlsi.running, lastActivityAt: iso(1) },
+      { sessionId: ID.parent, title: 'AI 협업', cwd: 'C:\\w\\inquiry', isRunning: false, lastActivityAt: iso(9) },
+      { sessionId: ID.spike, title: '국내 웹 탐색', cwd: 'C:\\w\\inquiry\\.claude\\worktrees\\kr-web-spike', startedBy: ID.parent, isRunning: false, lastActivityAt: iso(29) },
+      { sessionId: ID.lms, title: 'LMS management', cwd: 'C:\\h\\HY-LMS', isRunning: false, lastActivityAt: iso(173) },
+    ]
+    const isVlsi = e.args?.session_id === ID.vlsi
+    const text =
+      e.tool === 'list_sessions'
+        ? JSON.stringify(sessions)
+        : `Session "s" (${isVlsi && vlsi.running ? 'running' : 'idle'}) — showing 1 of 1 messages\n\n${(isVlsi && vlsi.events) || '[assistant] 파일을 읽는 중입니다.'}`
+    return { value: { content: [{ type: 'text', text }], isError: false } }
+  })
+  return { sent, opened, clock }
+}
+
+test('the board: islands by tier, answers inline, dormant islands folded, titles open sessions', async ($, on) => {
+  const { sent, opened } = stage(on, { running: true })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
+  const ui = await $.ui.mount(PANE)
+  const text = async (pattern: RegExp | string) => (await ui.find({ type: 'Text', text: pattern }))?.text
+  const pictured = async (alt: string) => (await ui.findAll({ type: 'Svg' })).some(one => String(one.props.alt) === alt)
+
+  // The header's counts are filters.
+  expect((await ui.find({ key: 'filter:wait' }))?.text).toBe('대기 1')
+  // AI 협업 stopped and only its shell runs on: that is not running.
+  expect((await ui.find({ key: 'filter:work' }))?.text).toBe('실행 1')
+  // Each session's age is its own: the last activity, never the time the radar looked.
+  expect(await text('29분')).toBe('29분')
+  expect(await text('9분')).toBe('9분')
+  expect(await text('나를 기다림 · 2분째')).toBe('나를 기다림 · 2분째')
+  expect(await text('어느 시안으로 갈까요?')).toBe('어느 시안으로 갈까요?')
+  // The waiting session's choices are numbered buttons. Nothing has a shortcut: the desktop passes
+  // no key to a pane's buttons.
+  const first = await ui.find({ key: `answer:${ID.ask}:0` })
+  expect(first?.text).toBe('1 A + C피크')
+  expect((await ui.findAll({ type: 'Button' })).every(one => one.props.hotkey === undefined)).toBe(true)
+  // A popped-out window is a button away.
+  expect((await ui.find({ key: 'popout' }))?.text).toBe('창으로')
+  // The shell AI 협업 left running shows under it, with how long, and marks the island in teal as
+  // background: a hollow dot, no sweep, no "실행 중".
+  expect(await text('npm run eval:run -- --batch evM2')).toBe('npm run eval:run -- --batch evM2')
+  expect(await text('20분째')).toBe('20분째')
+  expect(await text('백그라운드 1')).toBe('백그라운드 1')
+  expect(await pictured('백그라운드')).toBe(true)
+  expect((await ui.findAll({ type: 'Svg' })).filter(one => String(one.props.alt) === '진행 중').length).toBe(1)
+  expect(await pictured('kr-web-spike')).toBe(true)
+  // Every picture names itself: one with an empty alt is not drawn.
+  expect((await ui.findAll({ type: 'Svg' })).every(one => String(one.props.alt).length > 0)).toBe(true)
+  // HY-LMS has been quiet for nearly three hours: below the line, folded into a mini chip.
+  expect(await text('휴면 · 2시간 이상')).toBe('휴면 · 2시간 이상')
+  expect((await ui.find({ key: 'fold:C:\\h\\HY-LMS' }))?.text).toBe('HY-LMS')
+  expect((await ui.find({ key: `open:${ID.lms}` }))?.text).toBe('LMS management')
+  expect((await ui.findAll({ type: 'Button', text: '열기' })).length).toBe(0)
+
+  // An answer button sends what the button says, without leaving the radar, and the buttons give
+  // way to a note that it went.
+  await $.ui.press({ plugin: 'gudals', key: `answer:${ID.ask}:0` })
+  expect(sent).toEqual([{ session: ID.ask, message: 'A + C피크로 가자.' }])
+  expect(opened).toEqual([])
+  expect(await text('"A + C피크" 보냄 · 세션의 답을 기다리는 중')).toBe('"A + C피크" 보냄 · 세션의 답을 기다리는 중')
+  expect(await ui.find({ key: `answer:${ID.ask}:0` })).toBe(undefined)
+
+  await $.ui.press({ plugin: 'gudals', key: `open:${ID.spike}` })
+  expect(opened.at(-1)).toBe(`claude://claude.ai/epitaxy/${ID.spike}`)
+
+  // Unfolding a dormant island shows its tree.
+  expect(await ui.find({ key: `node:${ID.lms}` })).toBe(undefined)
+  await $.ui.press({ plugin: 'gudals', key: 'fold:C:\\h\\HY-LMS' })
+  expect((await ui.find({ key: `node:${ID.lms}` })) !== undefined).toBe(true)
+  await ui.unmount()
+})
+
+test('a state change leaves an unseen mark until it is looked at', async ($, on) => {
+  const vlsi = { running: true }
+  stage(on, vlsi)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
+  vlsi.running = false
+  await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
+  const ui = await $.ui.mount(PANE)
+  expect((await ui.find({ key: 'filter:new' }))?.text).toBe('새 변경 1')
+  // The changed island carries the mark on its corner.
+  expect((await ui.findAll({ type: 'Svg' })).some(one => String(one.props.alt) === '새 변경')).toBe(true)
+  await $.ui.press({ plugin: 'gudals', key: 'seen' })
+  // A count of none stays, dimmed, and cannot be chosen.
+  expect(await ui.find({ key: 'filter:new' })).toBe(undefined)
+  expect((await ui.findAll({ type: 'Svg' })).some(one => String(one.props.alt) === '새 변경 0')).toBe(true)
+  await ui.unmount()
+})
+
+test('in the folder-less island a change is marked on its own session, and opening it clears that one', async ($, on) => {
+  const world: { running: boolean; isAskClosed?: boolean } = { running: true }
+  stage(on, world)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
+  world.isAskClosed = true
+  await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
+  const ui = await $.ui.mount(PANE)
+  const marks = async () => (await ui.findAll({ type: 'Svg' })).filter(one => String(one.props.alt) === '새 변경').length
+  // The session's own mark, and its island's on the corner.
+  expect((await ui.find({ key: 'filter:new' }))?.text).toBe('새 변경 1')
+  expect(await marks()).toBe(2)
+  await $.ui.press({ plugin: 'gudals', key: `open:${ID.ask}` })
+  expect(await marks()).toBe(0)
+  expect(await ui.find({ key: 'filter:new' })).toBe(undefined)
+  await ui.unmount()
+})
+
+test("a working session's activity line follows its transcript on the next 3s refresh", async ($, on) => {
+  const vlsi: { running: boolean; events?: string } = { running: true }
+  const { clock } = stage(on, vlsi)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
+  const ui = await $.ui.mount(PANE)
+  expect((await ui.find({ type: 'Text', text: '파일을 읽는 중입니다.' }))?.text).toBe('파일을 읽는 중입니다.')
+  vlsi.events = '[assistant] 테스트를 돌려 볼게요.\n[assistant] (called Bash)'
+  await clock.advance(3_100)
+  expect((await ui.find({ type: 'Text', text: /명령 실행/ }))?.text).toBe('명령 실행 · 테스트를 돌려 볼게요.')
+  await ui.unmount()
+})
+
+test('a question closed on the board stops waiting, through a refresh, and the filters follow', async ($, on) => {
+  stage(on, { running: true })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
+  const ui = await $.ui.mount(PANE)
+
+  // Waiting: only the island with the waiting session.
+  await $.ui.press({ plugin: 'gudals', key: 'filter:wait' })
+  expect((await ui.find({ key: `open:${ID.ask}` })) !== undefined).toBe(true)
+  expect(await ui.find({ key: `open:${ID.vlsi}` })).toBe(undefined)
+
+  await $.ui.press({ plugin: 'gudals', key: `dismiss:${ID.ask}` })
+  await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
+  expect(await ui.find({ type: 'Text', text: '어느 시안으로 갈까요?' })).toBe(undefined)
+  expect((await ui.findAll({ type: 'Svg' })).some(one => String(one.props.alt) === '대기 0')).toBe(true)
+  // Nothing left under the filter: it says so and waits to be sent back.
+  expect((await ui.find({ type: 'Text', text: '해당 세션 없음' }))?.text).toBe('해당 세션 없음')
+  await $.ui.press({ plugin: 'gudals', key: 'toall' })
+  expect((await ui.find({ key: `open:${ID.vlsi}` })) !== undefined).toBe(true)
+
+  // Working: the islands with a working session, each tree whole.
+  await $.ui.press({ plugin: 'gudals', key: 'filter:work' })
+  expect((await ui.find({ key: `open:${ID.vlsi}` })) !== undefined).toBe(true)
+  expect(await ui.find({ key: `open:${ID.ask}` })).toBe(undefined)
+  await $.ui.press({ plugin: 'gudals', key: 'filter:all' })
+  await ui.unmount()
+})

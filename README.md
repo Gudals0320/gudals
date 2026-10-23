@@ -10,6 +10,9 @@ Gudals0320의 개인 Claude Code 셋업입니다. 스킬과 mod를 플러그인 
 | 스킬 | `write-ko` | `/gudals:write-ko` (또는 자동) | 한국어 초안을 쓸 때 사실·조건·불확실성을 보존하고 목적과 독자에 맞는 구조와 표현을 고릅니다. ASD-STE100 방향의 [ste-ko](https://github.com/beamonic/ste-ko)(MIT)에서 파생했고, 출처는 [ORIGIN.md](skills/write-ko/ORIGIN.md)에 있습니다 |
 | 스킬 + mod | `coordinate` | `/gudals:coordinate` (직접 호출만) | 계획을 마친 작업을 소유 범위가 분명한 하위 세션들로 나눠 워크트리에서 병렬로 돌리고, 메인 세션은 중계와 취합만 합니다. 하위 세션의 규칙은 지시문 대신 mod 훅이 주입하고 강제합니다 |
 | mod | transprompt | `/transprompt on \| off \| auto \| review \| status \| why` (또는 `/gudals:transprompt …`) | 음성인식으로 받아쓴 긴 프롬프트를 가로채 마크다운으로 구조화해 보냅니다. 기본은 자동 전송이고, `review` 모드에서는 승인을 받은 뒤 보냅니다 |
+| mod | monitor | `/gudals:monitor` | Desktop의 모든 Code 세션을 저장소별 섬으로 묶어 한 패널(Monitor)에 보여 줍니다. 대기(다음 단계 박스, 훅 차단), 실행, 백그라운드, 휴면을 색과 위치로 구분하고, 제목을 누르면 그 세션으로 옮기며, 대기 카드의 답 버튼은 그 세션에 메시지를 보냅니다 |
+
+monitor는 패널을 연 세션에서만 돌아갑니다. 앱의 세션 목록과 각 세션 기록을 3초마다 읽고(모델 호출이 없어 토큰은 들지 않습니다), 백그라운드 셸은 15초마다 확인합니다. 답 버튼의 메시지는 받는 세션에 "다른 세션이 보낸 메시지"로 도착하므로, 사용자 확인이 필요한 질문에는 그 세션이 직접 확인을 다시 요청할 수 있습니다. 화면 설계는 [hooks/monitor/DESIGN.md](hooks/monitor/DESIGN.md)에 있습니다.
 
 `/transprompt`는 mod가 세션 시작 때 등록하는 명령이라, Desktop에서는 새 세션의 첫 메시지 전에는 자동완성 목록에 뜨지 않습니다(끝까지 쳐서 보내면 동작합니다). `/gudals:transprompt`는 `skills/transprompt`가 디스크에서 바로 만드는 같은 명령이라 처음부터 목록에 뜹니다. 실행은 둘 다 mod가 처리합니다.
 
