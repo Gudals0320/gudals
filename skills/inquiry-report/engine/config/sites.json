@@ -1,0 +1,251 @@
+{
+  "version": 1,
+  "default": {
+    "min_interval_ms": 5000,
+    "per_hour": 60,
+    "per_day": 300
+  },
+  "groups": [
+    {
+      "group": "reddit_page",
+      "hosts": [
+        "old.reddit.com",
+        "reddit.com/search/"
+      ],
+      "min_interval_ms": 20000,
+      "per_hour": 40,
+      "per_day": 150,
+      "social": true
+    },
+    {
+      "group": "ncbi",
+      "hosts": [
+        "eutils.ncbi.nlm.nih.gov"
+      ],
+      "min_interval_ms": 350,
+      "per_hour": 3000,
+      "key_env": "NCBI_API_KEY",
+      "min_interval_ms_with_key": 110
+    },
+    {
+      "group": "openalex",
+      "hosts": [
+        "api.openalex.org"
+      ],
+      "min_interval_ms": 1000,
+      "per_hour": 100,
+      "per_day": 500,
+      "key_env": "OPENALEX_API_KEY",
+      "min_interval_ms_with_key": 200
+    },
+    {
+      "group": "crossref",
+      "hosts": [
+        "api.crossref.org"
+      ],
+      "min_interval_ms": 1000,
+      "per_hour": 600
+    },
+    {
+      "group": "doi",
+      "hosts": [
+        "doi.org",
+        "dx.doi.org"
+      ],
+      "min_interval_ms": 2000,
+      "per_hour": 300
+    },
+    {
+      "group": "pmc",
+      "hosts": [
+        "pmc.ncbi.nlm.nih.gov",
+        "www.ncbi.nlm.nih.gov"
+      ],
+      "min_interval_ms": 3000,
+      "per_hour": 200
+    },
+    {
+      "group": "elsevier",
+      "hosts": [
+        "sciencedirect.com",
+        "linkinghub.elsevier.com",
+        "elsevier.com",
+        "cell.com",
+        "thelancet.com"
+      ],
+      "min_interval_ms": 10000,
+      "per_hour": 30,
+      "per_day": 150,
+      "publisher": true,
+      "institutional_verified": true
+    },
+    {
+      "group": "wiley",
+      "hosts": [
+        "onlinelibrary.wiley.com",
+        "wiley.com"
+      ],
+      "min_interval_ms": 10000,
+      "per_hour": 30,
+      "per_day": 150,
+      "publisher": true,
+      "institutional_verified": true
+    },
+    {
+      "group": "springer_nature",
+      "hosts": [
+        "link.springer.com",
+        "springer.com",
+        "biomedcentral.com",
+        "springeropen.com"
+      ],
+      "min_interval_ms": 10000,
+      "per_hour": 30,
+      "per_day": 150,
+      "publisher": true,
+      "institutional_verified": true
+    },
+    {
+      "group": "nature",
+      "hosts": [
+        "nature.com"
+      ],
+      "min_interval_ms": 10000,
+      "per_hour": 30,
+      "per_day": 150,
+      "publisher": true
+    },
+    {
+      "group": "tandf",
+      "hosts": [
+        "tandfonline.com"
+      ],
+      "min_interval_ms": 10000,
+      "per_hour": 30,
+      "per_day": 150,
+      "publisher": true,
+      "institutional_verified": true
+    },
+    {
+      "group": "sage",
+      "hosts": [
+        "journals.sagepub.com",
+        "sagepub.com"
+      ],
+      "min_interval_ms": 10000,
+      "per_hour": 30,
+      "per_day": 150,
+      "publisher": true,
+      "institutional_verified": true
+    },
+    {
+      "group": "ieee",
+      "hosts": [
+        "ieeexplore.ieee.org"
+      ],
+      "min_interval_ms": 10000,
+      "per_hour": 30,
+      "per_day": 150,
+      "publisher": true,
+      "institutional_verified": true
+    },
+    {
+      "group": "oup",
+      "hosts": [
+        "academic.oup.com"
+      ],
+      "min_interval_ms": 10000,
+      "per_hour": 30,
+      "per_day": 150,
+      "publisher": true
+    },
+    {
+      "group": "jama_bmj",
+      "hosts": [
+        "jamanetwork.com",
+        "bmj.com"
+      ],
+      "min_interval_ms": 10000,
+      "per_hour": 30,
+      "per_day": 150,
+      "publisher": true
+    },
+    {
+      "group": "web_search",
+      "hosts": [
+        "duckduckgo.com",
+        "html.duckduckgo.com",
+        "google.com",
+        "www.google.com"
+      ],
+      "min_interval_ms": 30000,
+      "per_hour": 40,
+      "per_day": 150,
+      "note": "DuckDuckGo first, Google only as fallback; both share this budget (head decision 2026-10-22)"
+    },
+    {
+      "group": "x",
+      "hosts": [
+        "x.com",
+        "twitter.com",
+        "mobile.twitter.com"
+      ],
+      "min_interval_ms": 25000,
+      "per_hour": 40,
+      "per_day": 150,
+      "social": true,
+      "note": "read-only, user's logged-in session; stop for the day on account-limit signs"
+    },
+    {
+      "group": "threads",
+      "hosts": [
+        "threads.net",
+        "threads.com"
+      ],
+      "min_interval_ms": 25000,
+      "per_hour": 40,
+      "per_day": 150,
+      "social": true
+    },
+    {
+      "group": "reddit_json",
+      "hosts": [
+        "www.reddit.com",
+        "reddit.com"
+      ],
+      "min_interval_ms": 6000,
+      "per_hour": 200,
+      "per_day": 1000,
+      "social": true,
+      "note": "public JSON without cookies (about 10 requests per minute unauthenticated)"
+    },
+    {
+      "group": "kr_community",
+      "hosts": [
+        "dcinside.com",
+        "fmkorea.com",
+        "clien.net",
+        "theqoo.net",
+        "ruliweb.com",
+        "ppomppu.co.kr",
+        "instiz.net",
+        "bobaedream.co.kr",
+        "mlbpark.donga.com",
+        "cafe.naver.com",
+        "cafe.daum.net"
+      ],
+      "min_interval_ms": 20000,
+      "per_hour": 30,
+      "per_day": 120,
+      "social": true
+    }
+  ],
+  "slots": {
+    "anthropic": {
+      "concurrency": 2,
+      "lease_ms": 420000
+    }
+  },
+  "max_wait_ms": 900000,
+  "institutional_verified_note": "Publishers where M0 preflight confirmed institutional full text (2026-10-22). A paywall there means the login lapsed; elsewhere it means no subscription."
+}
