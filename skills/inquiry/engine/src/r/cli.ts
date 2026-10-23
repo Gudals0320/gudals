@@ -1,4 +1,4 @@
-// Research toolbox CLI: `npm run r -- <command> ...`. The inquiry-report skill
+// Research toolbox CLI: `npm run r -- <command> ...`. The inquiry skill
 // drives a run with these commands; `npm run r -- help` lists them.
 
 import { existsSync, readFileSync } from "node:fs";
