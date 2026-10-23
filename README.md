@@ -7,6 +7,7 @@ Gudals0320의 개인 Claude Code 셋업입니다. 스킬과 mod를 플러그인 
 | 종류 | 이름 | 호출 | 설명 |
 | --- | --- | --- | --- |
 | 스킬 | `web` | `/gudals:web` (또는 자동) | 답하기 전에 남들의 경험·해결 사례·최신 정보를 먼저 찾고 근거 있는 추천을 줍니다 |
+| 스킬 | `write-ko` | `/gudals:write-ko` (또는 자동) | 한국어 초안을 쓸 때 사실·조건·불확실성을 보존하고 목적과 독자에 맞는 구조와 표현을 고릅니다. ASD-STE100 방향의 [ste-ko](https://github.com/beamonic/ste-ko)(MIT)에서 파생했고, 출처는 [ORIGIN.md](skills/write-ko/ORIGIN.md)에 있습니다 |
 | mod | transprompt | `/transprompt on \| off \| status \| why` (또는 `/gudals:transprompt …`) | 음성인식으로 받아쓴 긴 프롬프트를 가로채 마크다운으로 구조화하고, 승인을 받은 뒤 보냅니다 |
 
 `/transprompt`는 mod가 세션 시작 때 등록하는 명령이라, Desktop에서는 새 세션의 첫 메시지 전에는 자동완성 목록에 뜨지 않습니다(끝까지 쳐서 보내면 동작합니다). `/gudals:transprompt`는 `skills/transprompt`가 디스크에서 바로 만드는 같은 명령이라 처음부터 목록에 뜹니다. 실행은 둘 다 mod가 처리합니다.
