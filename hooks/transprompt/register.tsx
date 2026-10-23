@@ -116,13 +116,14 @@ async function isEnabled($: EngineInterface) {
   return (await $.store.get('transpromptEnabled')) !== false
 }
 
-async function structure($: EngineInterface, raw: string, model: string) {
+// auto가 참이면 승인 단계 없이 결과를 바로 보낸다. 실패해도 기다리지 않고 원문을 보낸다.
+async function structure($: EngineInterface, raw: string, model: string, auto: boolean) {
   inFlight?.abort()
   const stop = new AbortController()
   inFlight = stop
   view = 'structured'
   const startedAt = await $.clock.now()
-  await update($, draft, (): Draft => ({ phase: 'structuring', raw, startedAt }))
+  await update($, draft, (): Draft => ({ phase: 'structuring', raw, startedAt, auto }))
   $.ui.status('transprompt: 구조화 중…')
   stopTicker()
   ticker = $.clock.every(1000, () => $.ui.invalidate('ui.render'))
@@ -140,10 +141,20 @@ async function structure($: EngineInterface, raw: string, model: string) {
 
   if (result.isAnswered && result.text.trim() !== '') {
     const structured = stripEmphasis(result.text)
+    if (auto) {
+      $.ui.toast('transprompt: 구조화해서 보냈어요')
+      await send($, structured)
+      return
+    }
     await update($, draft, (): Draft => ({ phase: 'ready', raw, structured }))
     $.ui.toast('transprompt: 구조화 완료, 확인 후 승인해 주세요')
   } else {
     const reason = describeFailure(result.isAnswered ? { reason: 'empty-reply' } : result)
+    if (auto) {
+      $.ui.toast(`transprompt: 구조화 실패(${reason}), 원문을 보냈어요`)
+      await send($, raw)
+      return
+    }
     await update($, draft, (): Draft => ({ phase: 'failed', raw, reason }))
   }
 }
@@ -176,7 +187,14 @@ async function toPrompt($: EngineInterface, text: string, bypass: boolean) {
   await $.prompt.fill({ text })
 }
 
-type Settings = { minChars: number; model: string; voiceGate: boolean; voiceThreshold: number }
+type Settings = { minChars: number; model: string; voiceGate: boolean; voiceThreshold: number; auto: boolean }
+
+// /transprompt auto | review로 고른 모드가 플러그인 설정(transpromptAuto)보다 우선한다.
+async function isAuto($: EngineInterface, settings: Settings) {
+  const saved = await $.store.get('transpromptAuto')
+
+  return typeof saved === 'boolean' ? saved : settings.auto
+}
 
 async function runCommand($: EngineInterface, args: string, settings: Settings) {
   const arg = args.trim()
@@ -186,12 +204,16 @@ async function runCommand($: EngineInterface, args: string, settings: Settings) 
   if (arg === 'on' || arg === 'off') {
     await $.store.set('transpromptEnabled', arg === 'on')
   }
+  if (arg === 'auto' || arg === 'review') {
+    await $.store.set('transpromptAuto', arg === 'auto')
+  }
   const enabled = await isEnabled($)
+  const mode = (await isAuto($, settings)) ? '자동 전송' : '검토 후 전송'
   const { minChars, model, voiceGate, voiceThreshold } = settings
 
   return {
     text:
-      `transprompt: ${enabled ? '켜짐' : '꺼짐'} (${minChars}자 이상, ` +
+      `transprompt: ${enabled ? '켜짐' : '꺼짐'}, ${mode} (${minChars}자 이상, ` +
       `${voiceGate ? `음성 판정 점수 ${voiceThreshold} 이상만` : '음성 판정 없이'} 가로챔, 모델 ${model})`,
   }
 }
@@ -201,13 +223,14 @@ export const registerTransprompt: Register = (on, options) => {
   const model = String(options.transpromptModel ?? 'sonnet')
   const voiceGate = options.transpromptVoiceGate !== false
   const voiceThreshold = Number(options.transpromptVoiceThreshold ?? 2)
-  const settings: Settings = { minChars, model, voiceGate, voiceThreshold }
+  const auto = options.transpromptAuto !== false
+  const settings: Settings = { minChars, model, voiceGate, voiceThreshold, auto }
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'transprompt',
-      description: '음성 프롬프트 구조화: on | off | status | why',
-      argumentHint: 'on | off | status | why',
+      description: '음성 프롬프트 구조화: on | off | auto | review | status | why',
+      argumentHint: 'on | off | auto | review | status | why',
     })
 
     return next(e)
@@ -272,7 +295,15 @@ export const registerTransprompt: Register = (on, options) => {
       return next(e)
     }
 
-    void structure($, e.text, model)
+    // 자동 모드는 사람을 기다리지 않으므로 패널이 입력 포커스를 가져가지 않는다. 진행을 보여 주고 취소할 길만 남긴다.
+    if (await isAuto($, settings)) {
+      void structure($, e.text, model, true)
+      void $.ui.open({ id: PANE, title: TITLE })
+
+      return { drop: 'transprompt: 구조화해서 바로 보냅니다' }
+    }
+
+    void structure($, e.text, model, false)
     void $.ui.open({ id: PANE, title: TITLE, focus: true, closeOnEscape: true })
 
     return { drop: 'transprompt: 구조화한 뒤 승인을 받아 보냅니다' }
@@ -317,6 +348,7 @@ export const registerTransprompt: Register = (on, options) => {
             <Text color="warning" weight="semibold">구조화 중</Text>
             <Text dimColor size="caption">
               {current.raw.length}자 · {seconds}초 경과 · {model}
+              {current.auto ? ' · 끝나면 바로 보냅니다' : ''}
             </Text>
           </Box>
           <Box flexDirection="row" gap={2} flexWrap="wrap">
@@ -338,7 +370,7 @@ export const registerTransprompt: Register = (on, options) => {
             <Text dimColor size="caption">{current.reason}</Text>
           </Box>
           <Box flexDirection="row" gap={1} flexWrap="wrap">
-            <Button key="retry" hotkey="4" variant="primary" autoFocus label="다시 구조화" onPress={() => structure($, current.raw, model)} />
+            <Button key="retry" hotkey="4" variant="primary" autoFocus label="다시 구조화" onPress={() => structure($, current.raw, model, false)} />
             <Button key="raw" hotkey="3" label="원문 그대로 보내기" onPress={() => send($, current.raw)} />
           </Box>
           <Box flexDirection="row" gap={2} flexWrap="wrap">
@@ -367,7 +399,7 @@ export const registerTransprompt: Register = (on, options) => {
         </Box>
         <Box flexDirection="row" gap={2} flexWrap="wrap">
           <Button key="raw" hotkey="3" plain dimColor label="원문 그대로" onPress={() => send($, current.raw)} />
-          <Button key="retry" hotkey="4" plain dimColor label="다시 구조화" onPress={() => structure($, current.raw, model)} />
+          <Button key="retry" hotkey="4" plain dimColor label="다시 구조화" onPress={() => structure($, current.raw, model, false)} />
           <Button key="cancel" hotkey="5" plain dimColor label="취소" onPress={() => toPrompt($, current.raw, false)} />
         </Box>
         <Box flexDirection="row" gap={2}>

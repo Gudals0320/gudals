@@ -28,7 +28,7 @@ test('stripEmphasis removes bold and italic but keeps bullets and code', () => {
   expect(stripEmphasis('```markdown\n# T\n- a\n```')).toBe('# T\n- a')
 })
 
-test('a long voice prompt is held, structured, and sent on approval', { options: { transpromptMinChars: 50 } }, async ($, on) => {
+test('a long voice prompt is held, structured, and sent on approval', { options: { transpromptMinChars: 50, transpromptAuto: false } }, async ($, on) => {
   const sent: string[] = []
   mock.store(on)
   mock.clock(on)
@@ -96,7 +96,7 @@ test('a short prompt goes straight through', async ($, on) => {
   expect(sent).toEqual(['테스트 돌려 줘'])
 })
 
-test('a long typed prompt is not taken for dictation', { options: { transpromptMinChars: 50 } }, async ($, on) => {
+test('a long typed prompt is not taken for dictation', { options: { transpromptMinChars: 50, transpromptAuto: false } }, async ($, on) => {
   const sent: string[] = []
   mock.store(on)
   on('command.register', () => ({ value: { command: 'transprompt' } }))
@@ -113,7 +113,7 @@ test('a long typed prompt is not taken for dictation', { options: { transpromptM
   expect(sent).toEqual([typed])
 })
 
-test('why explains a prompt skipped for being short', { options: { transpromptMinChars: 50 } }, async ($, on) => {
+test('why explains a prompt skipped for being short', { options: { transpromptMinChars: 50, transpromptAuto: false } }, async ($, on) => {
   mock.store(on)
   on('command.register', () => ({ value: { command: 'transprompt' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -128,7 +128,7 @@ test('why explains a prompt skipped for being short', { options: { transpromptMi
   expect(why.text).toContain('최소 50자')
 })
 
-test('why explains a prompt skipped while turned off', { options: { transpromptMinChars: 50 } }, async ($, on) => {
+test('why explains a prompt skipped while turned off', { options: { transpromptMinChars: 50, transpromptAuto: false } }, async ($, on) => {
   mock.store(on)
   on('command.register', () => ({ value: { command: 'transprompt' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -142,7 +142,7 @@ test('why explains a prompt skipped while turned off', { options: { transpromptM
   expect(why.text).toContain('꺼져 있습니다')
 })
 
-test('/gudals:transprompt from the skill answers like /transprompt', { options: { transpromptMinChars: 50 } }, async ($, on) => {
+test('/gudals:transprompt from the skill answers like /transprompt', { options: { transpromptMinChars: 50, transpromptAuto: false } }, async ($, on) => {
   mock.store(on)
   on('command.register', () => ({ value: { command: 'transprompt' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -162,14 +162,17 @@ type Engine = Parameters<Parameters<typeof test>[1]>[0]
 type On = Parameters<Parameters<typeof test>[1]>[1]
 
 // 음성 프롬프트를 붙잡아 구조화를 시작시킨다. 미리보기 패널은 각 테스트가 그린다.
-async function holdVoicePrompt($: Engine, on: On) {
+async function holdVoicePrompt($: Engine, on: On, sent: string[] = []) {
   on('command.register', () => ({ value: { command: 'transprompt' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.close', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  on('prompt.submit', (_, e) => ({ text: e.text }))
+  on('prompt.submit', (_, e) => {
+    sent.push(e.text)
+    return { text: e.text }
+  })
 
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const held = await $.prompt.submit({ text: RAW, wait: false, origin: { kind: 'composer' } })
@@ -191,7 +194,7 @@ async function pressInPane($: Engine, key: string) {
   await ui.unmount()
 }
 
-test('the review pane switches between the structured and the original text', { options: { transpromptMinChars: 50 } }, async ($, on) => {
+test('the review pane switches between the structured and the original text', { options: { transpromptMinChars: 50, transpromptAuto: false } }, async ($, on) => {
   mock.store(on)
   const clock = mock.clock(on)
   on('model.complete', () => ({ value: { isAnswered: true, text: STRUCTURED, usage: USAGE } }))
@@ -209,7 +212,7 @@ test('the review pane switches between the structured and the original text', { 
   expect((await findInPane($, { key: 'preview' }))?.text).toContain('에러 메시지를 한국어로 바꾼다')
 })
 
-test('the structuring pane counts the seconds since it started', { options: { transpromptMinChars: 50 } }, async ($, on) => {
+test('the structuring pane counts the seconds since it started', { options: { transpromptMinChars: 50, transpromptAuto: false } }, async ($, on) => {
   mock.store(on)
   const clock = mock.clock(on)
   let answer: (value: unknown) => void = () => {}
@@ -228,7 +231,7 @@ test('the structuring pane counts the seconds since it started', { options: { tr
   expect(await findInPane($, { type: 'Text', text: '검토 대기' })).toBeDefined()
 })
 
-test('a failed structuring says why in plain words and offers a retry first', { options: { transpromptMinChars: 50 } }, async ($, on) => {
+test('a failed structuring says why in plain words and offers a retry first', { options: { transpromptMinChars: 50, transpromptAuto: false } }, async ($, on) => {
   mock.store(on)
   const clock = mock.clock(on)
   on('model.complete', () => ({
@@ -240,4 +243,78 @@ test('a failed structuring says why in plain words and offers a retry first', { 
   expect(await findInPane($, { type: 'Text', text: '구조화 실패' })).toBeDefined()
   expect(await findInPane($, { type: 'Text', text: '모델이 붐비고 있어요' })).toBeDefined()
   expect((await findInPane($, { key: 'retry' }))?.props).toMatchObject({ variant: 'primary' })
+})
+
+test('auto mode, the default, sends the structured prompt without waiting', { options: { transpromptMinChars: 50 } }, async ($, on) => {
+  const sent: string[] = []
+  const opened: unknown[] = []
+  mock.store(on)
+  const clock = mock.clock(on)
+  on('model.complete', () => ({ value: { isAnswered: true, text: STRUCTURED, usage: USAGE } }))
+  on('command.register', () => ({ value: { command: 'transprompt' } }))
+  on('ui.open', (_, e) => {
+    opened.push(e)
+    return { value: { isPlaced: true } }
+  })
+  on('ui.close', () => ({ value: undefined }))
+  on('ui.status', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('prompt.submit', (_, e) => {
+    sent.push(e.text)
+    return { text: e.text }
+  })
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const held = await $.prompt.submit({ text: RAW, wait: false, origin: { kind: 'composer' } })
+  expect(held.drop).toContain('바로 보냅니다')
+  expect(opened.length).toBe(1)
+  expect((opened[0] as { focus?: true }).focus).toBeUndefined()
+
+  await clock.settle()
+  expect(sent.length).toBe(1)
+  expect(sent[0]).toContain('# 로그인 페이지 수정')
+  expect(sent[0]).not.toContain('**')
+  expect(await findInPane($, { key: 'approve' })).toBeUndefined()
+})
+
+test('auto mode sends the original when structuring fails', { options: { transpromptMinChars: 50 } }, async ($, on) => {
+  const sent: string[] = []
+  mock.store(on)
+  const clock = mock.clock(on)
+  on('model.complete', () => ({ value: { isAnswered: false, reason: 'aborted', usage: USAGE } }))
+  await holdVoicePrompt($, on, sent)
+  await clock.settle()
+
+  expect(sent).toEqual([RAW])
+  expect(await findInPane($, { key: 'retry' })).toBeUndefined()
+})
+
+test('/transprompt review asks for approval again, and auto turns it back off', { options: { transpromptMinChars: 50 } }, async ($, on) => {
+  const sent: string[] = []
+  mock.store(on)
+  const clock = mock.clock(on)
+  on('model.complete', () => ({ value: { isAnswered: true, text: STRUCTURED, usage: USAGE } }))
+  on('command.register', () => ({ value: { command: 'transprompt' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.close', () => ({ value: undefined }))
+  on('ui.status', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('prompt.submit', (_, e) => {
+    sent.push(e.text)
+    return { text: e.text }
+  })
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const review = await $.command.run({ command: 'transprompt', args: 'review' })
+  expect(review.text).toContain('검토 후 전송')
+
+  await $.prompt.submit({ text: RAW, wait: false, origin: { kind: 'composer' } })
+  await clock.settle()
+  expect(sent).toEqual([])
+  expect(await findInPane($, { key: 'approve' })).toBeDefined()
+
+  const auto = await $.command.run({ command: 'gudals:transprompt', args: 'auto' })
+  expect(auto.text).toContain('자동 전송')
 })

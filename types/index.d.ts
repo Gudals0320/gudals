@@ -1,5 +1,5 @@
 export type Draft =
-  | { phase: 'structuring'; raw: string; startedAt: number }
+  | { phase: 'structuring'; raw: string; startedAt: number; auto: boolean }
   | { phase: 'ready'; raw: string; structured: string }
   | { phase: 'failed'; raw: string; reason: string }
 

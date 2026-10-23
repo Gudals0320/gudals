@@ -5,6 +5,12 @@
   "repository": "https://github.com/Gudals0320/gudals",
   "types": "./types/index.d.ts",
   "userConfig": {
+    "transpromptAuto": {
+      "type": "boolean",
+      "title": "transprompt: 자동 전송",
+      "description": "켜면 구조화한 결과를 승인 없이 바로 보냅니다. 구조화에 실패하면 원문을 보냅니다. /transprompt auto 또는 review로 고른 모드가 이 값보다 우선합니다.",
+      "default": true
+    },
     "transpromptMinChars": {
       "type": "number",
       "title": "transprompt: 구조화 최소 글자 수",
