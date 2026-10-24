@@ -1,25 +1,30 @@
 import type { EngineInterface, Register } from 'claude-code'
 import {
   branchFromHead,
+  composeMainSection,
   composeSection,
   forbiddenGit,
   gitdirFromDotGit,
   hasReportPrefix,
+  isCoordBranch,
   isOwned,
   LOADED_MARKER,
   parseTask,
   repoRootFromGitdir,
   REPORT_PREFIXES,
+  STATE_PATH,
   taskNameFromBranch,
   type Task,
 } from './task'
 
 type Found = { task: Task; cwd: string; gitdir: string; repoRoot: string | null } | null
 
-// 모든 세션이 이 mod를 읽으므로, 브랜치가 `coord-<이름>`이고 `.coord/tasks/<이름>.md`가 있을 때만 켜진다.
-const findTask = async ($: EngineInterface): Promise<Found> => {
+const readFile = ($: EngineInterface) => (path: string) => $.fs.read(path).then(String, () => null)
+
+// 작업 폴더의 git 폴더와 현재 브랜치. 워크트리면 `.git` 파일이 가리키는 곳이 git 폴더다.
+const whereami = async ($: EngineInterface) => {
   const cwd = await $.session.cwd()
-  const read = (path: string) => $.fs.read(path).then(String, () => null)
+  const read = readFile($)
 
   const dotGit = await read(`${cwd}/.git`)
   const linked = dotGit === null ? `${cwd}/.git` : gitdirFromDotGit(dotGit)
@@ -27,7 +32,15 @@ const findTask = async ($: EngineInterface): Promise<Found> => {
   const head = gitdir === null ? null : await read(`${gitdir}/HEAD`)
   const branch = head === null ? null : branchFromHead(head)
 
-  if (branch === null || !/(^|\/)coord-/.test(branch)) return null
+  return { cwd, gitdir, branch }
+}
+
+// 모든 세션이 이 mod를 읽으므로, 브랜치가 `coord-<이름>`이고 `.coord/tasks/<이름>.md`가 있을 때만 켜진다.
+const findTask = async ($: EngineInterface): Promise<Found> => {
+  const { cwd, gitdir, branch } = await whereami($)
+  const read = readFile($)
+
+  if (!isCoordBranch(branch)) return null
 
   const entries = await $.fs.list(`${cwd}/.coord/tasks`).catch(() => [])
   const names = entries.filter(f => f.kind === 'file' && f.name.endsWith('.md')).map(f => f.name.slice(0, -3))
@@ -58,15 +71,29 @@ function current($: EngineInterface): Promise<Found> {
   return (found ??= locate($))
 }
 
+// 메인 세션: coord 브랜치가 아니고 작업 폴더에 상태 파일이 있다. 상태는 매번 바뀌므로 캐시하지 않고 다시 읽는다.
+const mainState = async ($: EngineInterface): Promise<string | null> => {
+  const { cwd, branch } = await whereami($)
+
+  return isCoordBranch(branch) ? null : readFile($)(`${cwd}/${STATE_PATH}`)
+}
+
 export const registerCoordinate: Register = on => {
   // 첫 지시문 대신 시스템 프롬프트에 작업 명세를 둔다. 압축돼도 사라지지 않는다.
+  // 메인에는 조율 규칙과 상태 파일을 같은 방식으로 붙인다. 메인이 압축되거나 새로 열려도 이어갈 수 있다.
   on('prompt.compose', async ($, e, next) => {
     const result = await next(e)
     const hit = await current($)
 
-    if (hit === null) return result
+    if (hit !== null) {
+      return { sections: [...result.sections, { id: 'gudals:coordinate', text: composeSection(hit.task), scope: 'session' as const }] }
+    }
 
-    return { sections: [...result.sections, { id: 'gudals:coordinate', text: composeSection(hit.task), scope: 'session' as const }] }
+    const state = await mainState($)
+
+    if (state === null) return result
+
+    return { sections: [...result.sections, { id: 'gudals:coordinate-main', text: composeMainSection(state), scope: 'session' as const }] }
   })
 
   for (const tool of ['Edit', 'Write', 'NotebookEdit'] as const) {

@@ -5,6 +5,8 @@ export type Task = {
   owns: string[]
   base: string
   plan: string
+  verify: string
+  model: string
   body: string
 }
 
@@ -30,7 +32,8 @@ export const gitdirFromDotGit = (dotGit: string): string | null => {
   return match?.[1]?.trim() ?? null
 }
 
-// 작업 파일: 맨 앞 `---` 블록에 owns(쉼표 구분 glob), base, plan을 두고, 나머지는 브리프 본문이다.
+// 작업 파일: 맨 앞 `---` 블록에 owns(쉼표 구분 glob), base, plan, verify(검증 명령), model(하위 세션 모델 id)을 두고,
+// 나머지는 브리프 본문이다.
 export const parseTask = (name: string, text: string): Task => {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text)
   const head = match?.[1] ?? ''
@@ -42,6 +45,8 @@ export const parseTask = (name: string, text: string): Task => {
     owns: field('owns').split(',').map(s => s.trim()).filter(Boolean),
     base: field('base') || 'main',
     plan: field('plan') || 'docs/plan.md',
+    verify: field('verify'),
+    model: field('model'),
     body,
   }
 }
@@ -91,6 +96,9 @@ export const repoRootFromGitdir = (gitdir: string): string | null => {
 
 export const notesPath = (task: Task) => `.coord/notes/${task.name}.md`
 
+// opencodex가 다른 제공자로 보내는 모델. 하네스는 Claude라고 표시하지만 실제 모델은 다르다.
+export const isRoutedModel = (model: string): boolean => /^ocx-/i.test(model.trim())
+
 // 자기 워크트리 안: owns와 자기 인계 메모만 허용한다. 같은 저장소의 다른 체크아웃: 거부한다.
 // 그 밖(스크래치패드, OS 임시 폴더 등): 허용한다.
 export const isOwned = (task: Task, cwd: string, path: string, repoRoot: string | null = null): boolean => {
@@ -122,11 +130,25 @@ export const forbiddenGit = (command: string, base: string): string | null => {
 
 export const LOADED_MARKER = 'coord-loaded'
 
+// 메인 세션의 상태 파일. 커밋하지 않는다. 있으면 그 세션이 coord 메인이다.
+export const STATE_PATH = '.coord/state.md'
+
+export const isCoordBranch = (branch: string | null): boolean => branch !== null && /(^|\/)coord-/.test(branch)
+
 export const hasReportPrefix = (message: string): boolean => {
   const first = message.split(/\r?\n/).find(line => line.trim() !== '')?.trim() ?? ''
 
   return REPORT_PREFIXES.some(prefix => first.replace(/^[*_`#\s]+/, '').startsWith(prefix))
 }
+
+// 라우팅된 모델(ocx-*)에게만 붙이는 안내. 하네스가 보여주는 모델명과 실제 모델이 다르다.
+const routedNotes = (model: string): string => `
+## 이 세션의 모델
+이 세션은 opencodex 프록시를 거쳐 \`${model}\`로 돈다. 하네스가 Claude 모델명을 표시해도 실제 모델은 이것이다.
+- \`claude-api\` 스킬은 호출하지 않는다. 라우팅된 모델에는 그 문서 묶음이 빠져 있다.
+- 이미지 입력이 없다. 스크린샷을 읽어야 하면 \`BLOCKED\`로 보고하고, 확인은 텍스트 출력(명령 결과, 파일 내용)으로 한다.
+- 범위 밖 발견·막힘·불확실은 즉흥으로 우회하지 않고 멈춰서 보고한다. 보고는 비용이 아니다.
+`
 
 export const composeSection = (task: Task): string => `# coord 하위 세션: ${task.name}
 
@@ -149,6 +171,13 @@ export const composeSection = (task: Task): string => `# coord 하위 세션: ${
 - 같은 저장소의 다른 체크아웃(메인 폴더, 다른 워크트리) 수정. 저장소 밖 임시 폴더는 자유롭게 써도 된다
 - git push, merge, rebase, 기준 브랜치로 checkout/switch, reset --hard, 브랜치 생성·이름 변경·강제 삭제, worktree add
 
+## 검증: 2회 규칙
+검증 명령: ${task.verify ? `\`${task.verify}\`` : '(지정 없음 — 완료 기준에 적힌 명령을 검증 명령으로 삼는다)'}
+- 변경을 마칠 때마다 검증 명령만 돌린다. 전체 테스트·빌드·CI는 돌리지 않는다. 그것은 메인이 병합 뒤에 한다.
+- 실패하면 한 번 고치고 다시 돌린다. 두 번째도 실패하면 더 시도하지 말고 \`BLOCKED\`로 보고한다.
+- 그 보고에는 다음을 넣는다: 바꾼 파일 목록, 에러 원문(요약하지 않는다), 시도한 것 두 줄, 의심 지점 한 줄. 메인이 디프에서부터 이어간다.
+- 검증 명령 자체가 잘못됐다고 보이면(없는 파일, 없는 스크립트) 고치지 말고 \`BLOCKED\`로 보고한다.
+${isRoutedModel(task.model) ? routedNotes(task.model) : ''}
 ## 인계 메모
 다른 작업이 알아야 할 것(정한 이름·앵커, 가정, 범위 밖에서 발견한 문제)은 \`${notesPath(task)}\`에 적고 커밋한다. 보고에는 요약만 쓴다.
 
@@ -157,8 +186,41 @@ export const composeSection = (task: Task): string => `# coord 하위 세션: ${
 - \`DONE: <한 줄 요약>\`
 - \`BLOCKED: <무엇이 필요한지>\`
 - \`PLAN-CHANGE: <무엇을 왜 바꿔야 하는지>\`
-그 아래: 한 일, 완료 기준별 확인 결과, 브랜치 이름. 같은 실패를 두 번 겪으면 BLOCKED로 보고한다.
+그 아래: 한 일, 완료 기준별 확인 결과(검증 명령의 마지막 결과 포함), 브랜치 이름. 검증이 두 번 실패했으면 위 검증 절의 항목을 붙여 BLOCKED로 보고한다.
 
 ## 작업 명세
 ${task.body}
+`
+
+// 메인 세션에 매 요청 붙는 절. 스킬 본문이 압축으로 사라져도 조율·취합을 이어갈 수 있을 만큼만 담는다.
+export const composeMainSection = (state: string): string => `# coord 메인 세션
+
+이 세션은 coord 조율을 맡은 메인이다. 스킬 본문이 대화에서 사라졌어도(압축, 새로 연 세션) 이 절과 \`${STATE_PATH}\`로 조율과 취합을 이어간다. 이 지시는 매 요청 다시 붙는다.
+
+## 역할
+- 메인은 계획·판단·취합만 한다. 코드는 쓰지 않는다. 커밋은 공통 기반과 취합만 한다.
+- 하위 세션의 작업 명세는 \`.coord/tasks/<이름>.md\`, 계획은 상태 파일의 plan 항목이다.
+- 기다린다. 폴링하거나 "끝났나요?"를 보내지 않는다. 하위 세션이 턴을 끝내면 앱이 메인을 깨운다.
+
+## 상태 파일 \`${STATE_PATH}\`
+- 전이가 일어나면 바로 갱신한다: 세션 시작(id), 보고 수신(상태와 첫 줄), 사용자 승인, 병합 완료, 차수 전환. 대화에만 둔 결정은 압축되면 사라진다.
+- 상태 파일과 현실이 다르면 \`list_sessions\` {"linked": true}와 \`git branch --list '*coord-*'\`로 맞춘 뒤 진행한다.
+- 커밋하지 않는다.
+
+## 보고 처리
+- 알림은 400자에서 잘린다. 첫 줄의 상태만 보고 판단하고, 전문이 필요하면 \`list_events\`를 limit 2–4로 그 세션만 읽는다.
+- \`BLOCKED\`: 메인이 답할 수 있으면 \`SendMessage\`로 답한다. 사용자만 답할 수 있으면 묻고 답을 그대로 인용해 전달한다. 검증 2회 실패로 온 것은 원인을 알면 한 줄 지시로 되돌리고, 모르면 그 브랜치를 직접 받아 디프에서 이어간다. 세 번째 시도를 시키지 않는다.
+- \`PLAN-CHANGE\`: 다른 세션에 영향이 있으면 사용자에게 확인받고, 계획 파일을 고쳐 커밋한 뒤 영향받는 세션에 \`SendMessage\`로 보낸다.
+- 범위 밖 문제: 담당 세션에 전달한다. 담당이 없으면 사용자에게 알린다.
+- 한 세션이 실패해도 나머지는 계속 둔다.
+
+## 취합
+- 보고를 믿지 않는다. 브랜치마다 검사를 서브에이전트에 맡기고 판정 한 줄만 받는다: 변경 파일이 owns와 인계 메모 안에 있는지, 그 세션의 워크트리에서 verify 결과가 어떤지. 메인은 \`git diff --stat\`까지만 직접 본다. 전체 diff를 메인 컨텍스트에 넣지 않는다.
+- 병합은 상태 파일에 승인이 기록돼 있을 때만 한다. \`refs/heads/<브랜치>\`를 의존이 적은 순서로 하나씩 병합하고, 병합마다 테스트를 돌린다. 승인이 없으면 브랜치 목록과 상태만 보고한다.
+- 소유 범위 위반에서 온 충돌은 고치지 않고 사용자에게 보고한다.
+- 다음 차수: 앞 차수를 모두 병합하고 빌드를 확인한 뒤, 계획 파일의 공유 식별자를 갱신하고, 작업 파일을 커밋하고, 세션을 띄운다. \`source_branch\`는 지금 브랜치다.
+- 모두 끝나면 \`.coord/\`를 지우는 커밋을 제안한다.
+
+## 현재 상태 (\`${STATE_PATH}\` 그대로)
+${state.trim()}
 `

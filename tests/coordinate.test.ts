@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { forbiddenGit, hasReportPrefix, isOwned, parseTask, repoRootFromGitdir, taskNameFromBranch } from '../hooks/coordinate/task'
+import { composeMainSection, composeSection, forbiddenGit, hasReportPrefix, isCoordBranch, isOwned, isRoutedModel, parseTask, repoRootFromGitdir, taskNameFromBranch } from '../hooks/coordinate/task'
 
 const CWD = 'C:/repo/.claude/worktrees/coord-auth-x1'
 const TASK = `---
@@ -10,6 +10,8 @@ plan: docs/plan.md
 ## 작업
 auth 모듈 구현
 `
+
+const ROUTED_TASK = TASK.replace('plan: docs/plan.md', ['plan: docs/plan.md', 'verify: npx vitest run tests/auth', 'model: ocx-claude-deepseek--deepseek-flash'].join(String.fromCharCode(10)))
 
 const FILES: Record<string, string> = {
   [`${CWD}/.git`]: 'gitdir: C:/repo/.git/worktrees/coord-auth-x1',
@@ -65,6 +67,46 @@ test('git rules block push, merge, moving to base and new branches', () => {
   expect(forbiddenGit('git commit -m "x" && git status', 'main')).toBe(null)
 })
 
+test('verify and model are optional frontmatter fields', () => {
+  const plain = parseTask('auth', TASK)
+  const routed = parseTask('auth', ROUTED_TASK)
+
+  expect(plain.verify).toBe('')
+  expect(plain.model).toBe('')
+  expect(routed.verify).toBe('npx vitest run tests/auth')
+  expect(routed.model).toBe('ocx-claude-deepseek--deepseek-flash')
+  expect(isRoutedModel(routed.model)).toBe(true)
+  expect(isRoutedModel('sonnet')).toBe(false)
+  expect(isRoutedModel('')).toBe(false)
+})
+
+test('the brief carries the two-strike verify rule, and routed notes only for ocx models', () => {
+  const plain = composeSection(parseTask('auth', TASK))
+  const routed = composeSection(parseTask('auth', ROUTED_TASK))
+
+  expect(plain).toContain('## 검증: 2회 규칙')
+  expect(plain).toContain('지정 없음')
+  expect(plain).not.toContain('## 이 세션의 모델')
+  expect(routed).toContain('`npx vitest run tests/auth`')
+  expect(routed).toContain('## 이 세션의 모델')
+  expect(routed).toContain('ocx-claude-deepseek--deepseek-flash')
+  expect(routed).toContain('claude-api')
+})
+
+test('the main section carries the coordination rules and the state file as written', () => {
+  const state = ['# coord 상태', '- 병합 승인: 받음 (머지해도 됨)', '| auth | local_1 | gudals/coord-auth-x1 | DONE | DONE: auth 끝 |'].join(String.fromCharCode(10))
+  const text = composeMainSection(state)
+
+  expect(isCoordBranch('gudals/coord-auth-x1')).toBe(true)
+  expect(isCoordBranch('main')).toBe(false)
+  expect(isCoordBranch(null)).toBe(false)
+  expect(text).toContain('# coord 메인 세션')
+  expect(text).toContain('.coord/state.md')
+  expect(text).toContain('서브에이전트에 맡기고')
+  expect(text).toContain('머지해도 됨')
+  expect(text).toContain('local_1')
+})
+
 test('report prefix is read from the first non-empty line', () => {
   expect(hasReportPrefix('\nDONE: auth 끝')).toBe(true)
   expect(hasReportPrefix('**BLOCKED:** env 필요')).toBe(true)
@@ -91,6 +133,56 @@ test('in a coord worktree, edits outside ownership are denied and git push is bl
   expect('deny' in inside).toBe(false)
   expect(JSON.stringify(outside)).toContain('소유 범위 밖')
   expect(JSON.stringify(push)).toContain('coordinate:')
+})
+
+test('a main checkout with a state file gets the main section and no guards', async ($, on) => {
+  const ROOT = 'C:/repo'
+  const MAIN_FILES: Record<string, string> = {
+    [`${ROOT}/.git/HEAD`]: 'ref: refs/heads/main' + String.fromCharCode(10),
+    [`${ROOT}/.coord/state.md`]: ['# coord 상태', '- 차수: 1 / 1', '| auth | local_9 | gudals/coord-auth-x1 | 진행 중 | |'].join(String.fromCharCode(10)),
+  }
+
+  on('session.cwd', () => ({ value: ROOT }))
+  on('fs.read', (_, e) => {
+    const path = e.path.replace(/\\/g, '/')
+
+    return path in MAIN_FILES ? { value: MAIN_FILES[path]! } : { deny: 'missing' }
+  })
+  on('fs.list', () => ({ deny: 'missing' }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('prompt.compose', () => ({ sections: [] }))
+  on('tool.call', () => ({ result: {} }))
+
+  await $.session.start({ cwd: ROOT, surface: 'desktop', isInteractive: true })
+
+  const { sections } = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: [], tools: [], outputStyle: null, traits: [] })
+  const push = await $.tool.call({ tool: 'Bash', command: 'git push' })
+  const edit = await $.tool.call({ tool: 'Edit', file_path: `${ROOT}/src/anything.ts`, old_string: 'a', new_string: 'b' })
+
+  expect(sections.map(s => s.id)).toEqual(['gudals:coordinate-main'])
+  expect(sections[0]!.text).toContain('local_9')
+  expect(JSON.stringify(push)).not.toContain('coordinate:')
+  expect(JSON.stringify(edit)).not.toContain('coordinate:')
+})
+
+test('in a coord worktree the child section wins even if a state file is present', async ($, on) => {
+  const withState = { ...FILES, [`${CWD}/.coord/state.md`]: '# coord 상태' }
+
+  on('session.cwd', () => ({ value: CWD }))
+  on('fs.read', (_, e) => {
+    const path = e.path.replace(/\\/g, '/')
+
+    return path in withState ? { value: withState[path]! } : { deny: 'missing' }
+  })
+  on('fs.list', () => ({ value: [{ name: 'auth.md', kind: 'file', size: 1, mtimeMs: 0, isLink: false }] }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('prompt.compose', () => ({ sections: [] }))
+
+  await $.session.start({ cwd: CWD, surface: 'desktop', isInteractive: true })
+
+  const { sections } = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: [], tools: [], outputStyle: null, traits: [] })
+
+  expect(sections.map(s => s.id)).toEqual(['gudals:coordinate'])
 })
 
 test('outside a coord worktree nothing is guarded', async ($, on) => {
