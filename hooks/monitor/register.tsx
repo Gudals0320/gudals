@@ -817,10 +817,10 @@ export function registerMonitor(on: On) {
           {picture(dotPiece(island.best))}
           {isCold && !groupOf.has(island.key) ? (
             <Button key={`fold:${island.key}`} plain onPress={() => void toggleCold($, island.key)}>
-              <Text size="body" weight="semibold">{island.name}</Text>
+              <Text size="footnote" weight="semibold">{island.name}</Text>
             </Button>
           ) : (
-            <Text size="body" weight="semibold" color={isFolderless ? C.fg2 : undefined} wrap="truncate-end">{island.name}</Text>
+            <Text size="footnote" weight="semibold" color={isFolderless ? C.fg2 : undefined} wrap="truncate-end">{island.name}</Text>
           )}
           <Box flexGrow={1} flexShrink={1} minWidth={0}>
             <Text size="caption" color={whyColor} wrap="truncate-end">{isCold ? '' : island.why}</Text>
@@ -967,34 +967,6 @@ export function registerMonitor(on: On) {
       )
     }
 
-    // A group's islands fill top to bottom: two columns where the pane is wide enough, each card
-    // under the shorter one, and one column where it is not (the second wraps under the first).
-    const stacked = (key: string, members: IslandView[], room: number) => {
-      if (members.length === 1) {
-        return (
-          <Box key={key} flexDirection="row">
-            {placed(members[0]!, room, true)}
-          </Box>
-        )
-      }
-      const columns: IslandView[][] = [[], []]
-      const sums = [0, 0]
-      for (const island of members) {
-        const side = sums[1]! < sums[0]! ? 1 : 0
-        columns[side]!.push(island)
-        sums[side]! += heightOf(island, room)
-      }
-      return (
-        <Box key={key} flexDirection="row" flexWrap="wrap" alignItems="flex-start">
-          {columns.map((column, side) => (
-            <Box key={`${key}:col${side}`} flexDirection="column" width={CARD_MIN_CELLS} minWidth={0} flexGrow={1} flexShrink={1}>
-              {column.map(island => placed(island, room, true))}
-            </Box>
-          ))}
-        </Box>
-      )
-    }
-
     // A group: one teal frame around its islands, each still its own card. Its name, its size and
     // what can be done with it sit on a label in the frame's top edge, so it costs no row of its own.
     const framedGroups = groups
@@ -1002,6 +974,28 @@ export function registerMonitor(on: On) {
       .filter(one => one.members.length > 0)
       .map(one => ({ ...one, rank: Math.min(...one.members.map(island => TIER_ORDER[island.tier])) }))
       .sort((a, b) => a.rank - b.rank)
+    // Groups stand side by side where the pane is wide enough: two columns, each group under the
+    // shorter one, so groups of different heights interlock. Narrow, the second column wraps under.
+    const groupColumns = (key: string, list: typeof framedGroups) => {
+      if (list.length === 0) return false
+      if (list.length === 1) return groupFrame(list[0]!)
+      const columns: (typeof framedGroups)[] = [[], []]
+      const sums = [0, 0]
+      for (const one of list) {
+        const side = sums[1]! < sums[0]! ? 1 : 0
+        columns[side]!.push(one)
+        sums[side]! += GROUP_ROOM + GROUP_FOOT + one.members.reduce((sum, island) => sum + heightOf(island, BADGE_ROOM.top), 0)
+      }
+      return (
+        <Box key={key} flexDirection="row" flexWrap="wrap" alignItems="flex-start">
+          {columns.map((column, side) => (
+            <Box key={`${key}:col${side}`} flexDirection="column" width={CARD_MIN_CELLS} minWidth={0} flexGrow={1} flexShrink={1}>
+              {column.map(groupFrame)}
+            </Box>
+          ))}
+        </Box>
+      )
+    }
     const groupFrame = ({ group, members }: { group: MonitorGroup; members: IslandView[] }) => {
       const takes = picking?.kind === 'island'
       const isAdding = picking?.kind === 'group' && picking.id === group.id
@@ -1039,7 +1033,12 @@ export function registerMonitor(on: On) {
           {picture(spacerPiece(1, GROUP_ROOM))}
           <Box position="relative" flexDirection="column" borderStyle="round" borderColor={C.teal} backgroundColor={takes ? PICK_BG : undefined} paddingX="xs" paddingBottom="xs">
             {label}
-            {stacked(`grpcols:${group.id}`, members, BADGE_ROOM.top)}
+            {/* A group's islands stack in one column, top to bottom. */}
+            {members.map(island => (
+              <Box key={`grprow:${island.key}`} flexDirection="row">
+                {placed(island, BADGE_ROOM.top, true)}
+              </Box>
+            ))}
             {picture(spacerPiece(1, GROUP_FOOT))}
           </Box>
         </Box>
@@ -1066,13 +1065,13 @@ export function registerMonitor(on: On) {
       )
     }
     const board = [
-      ...framedGroups.filter(one => one.rank === TIER_ORDER.hot).map(groupFrame),
+      groupColumns('hotgroups', framedGroups.filter(one => one.rank === TIER_ORDER.hot)),
       ...hot.map(island => (
         <Box key={`row:${island.key}`} flexDirection="row">
           {placed(island, BADGE_ROOM.top, true)}
         </Box>
       )),
-      ...framedGroups.filter(one => one.rank !== TIER_ORDER.hot).map(groupFrame),
+      groupColumns('groups', framedGroups.filter(one => one.rank !== TIER_ORDER.hot)),
       grid('active', active, BADGE_ROOM.top),
       cold.length > 0 && (
         <Box key="divider" flexDirection="row" alignItems="center" gap="sm" paddingTop="sm" paddingRight="sm">
