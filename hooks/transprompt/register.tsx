@@ -64,6 +64,8 @@ let draftLength = 0
 let lastVerdict: VoiceVerdict | undefined
 // 마지막 프롬프트가 판정 전에 걸러졌다면 그 이유. 판정까지 갔으면 비운다.
 let lastSkip: string | undefined
+// 마지막으로 사람이 보낸 프롬프트가 입력창에 들어온 방식. /transprompt why가 보여 준다.
+let lastEdits: EditStats | undefined
 // 검토 패널에서 보고 있는 탭. 새로 구조화할 때마다 구조화본으로 돌아간다.
 let view: 'structured' | 'raw' = 'structured'
 // 구조화 중에 경과 시간을 다시 그리는 타이머.
@@ -117,13 +119,14 @@ async function isEnabled($: EngineInterface) {
 }
 
 // auto가 참이면 승인 단계 없이 결과를 바로 보낸다. 실패해도 기다리지 않고 원문을 보낸다.
-async function structure($: EngineInterface, raw: string, model: string, auto: boolean) {
+// command가 있으면 raw는 그 스킬 이름 뒤의 내용이고, 결과는 그 스킬을 다시 실행해 넘긴다.
+async function structure($: EngineInterface, raw: string, model: string, auto: boolean, command?: string) {
   inFlight?.abort()
   const stop = new AbortController()
   inFlight = stop
   view = 'structured'
   const startedAt = await $.clock.now()
-  await update($, draft, (): Draft => ({ phase: 'structuring', raw, startedAt, auto }))
+  await update($, draft, (): Draft => ({ phase: 'structuring', raw, startedAt, auto, command }))
   $.ui.status('transprompt: 구조화 중…')
   stopTicker()
   ticker = $.clock.every(1000, () => $.ui.invalidate('ui.render'))
@@ -143,20 +146,31 @@ async function structure($: EngineInterface, raw: string, model: string, auto: b
     const structured = stripEmphasis(result.text)
     if (auto) {
       $.ui.toast('transprompt: 구조화해서 보냈어요')
-      await send($, structured)
+      await send($, structured, command)
       return
     }
-    await update($, draft, (): Draft => ({ phase: 'ready', raw, structured }))
+    await update($, draft, (): Draft => ({ phase: 'ready', raw, structured, command }))
     $.ui.toast('transprompt: 구조화 완료, 확인 후 승인해 주세요')
   } else {
     const reason = describeFailure(result.isAnswered ? { reason: 'empty-reply' } : result)
     if (auto) {
       $.ui.toast(`transprompt: 구조화 실패(${reason}), 원문을 보냈어요`)
-      await send($, raw)
+      await send($, raw, command)
       return
     }
-    await update($, draft, (): Draft => ({ phase: 'failed', raw, reason }))
+    await update($, draft, (): Draft => ({ phase: 'failed', raw, reason, command }))
   }
+}
+
+// 입력창에 되돌릴 때는 스킬 호출을 앞에 붙여, 그대로 다시 보내면 같은 스킬로 간다.
+function withCommand(text: string, command: string | undefined) {
+  return command ? `/${command} ${text}` : text
+}
+
+async function isSkillCommand($: EngineInterface, name: string) {
+  const found = (await $.command.list()).find(c => c.name === name)
+
+  return found !== undefined && found.source !== 'builtin'
 }
 
 async function showView($: EngineInterface, next: 'structured' | 'raw') {
@@ -173,18 +187,22 @@ async function finish($: EngineInterface) {
   await $.ui.close({ id: PANE })
 }
 
-async function send($: EngineInterface, text: string) {
+async function send($: EngineInterface, text: string, command: string | undefined) {
   await finish($)
-  // 자기 자신이 호출한 $.prompt.submit은 이 모드의 prompt.submit 훅을 거치지 않는다.
+  // 자기 자신이 호출한 $.prompt.submit과 $.command.run은 이 모드의 훅을 거치지 않는다.
+  if (command) {
+    await $.command.run({ command, args: text })
+    return
+  }
   await $.prompt.submit({ text, asUser: true })
 }
 
-async function toPrompt($: EngineInterface, text: string, bypass: boolean) {
+async function toPrompt($: EngineInterface, text: string, bypass: boolean, command: string | undefined) {
   await finish($)
   if (bypass) {
     await update($, bypassNext, () => true)
   }
-  await $.prompt.fill({ text })
+  await $.prompt.fill({ text: withCommand(text, command) })
 }
 
 type Settings = { minChars: number; model: string; voiceGate: boolean; voiceThreshold: number; auto: boolean }
@@ -199,7 +217,10 @@ async function isAuto($: EngineInterface, settings: Settings) {
 async function runCommand($: EngineInterface, args: string, settings: Settings) {
   const arg = args.trim()
   if (arg === 'why') {
-    return { text: `transprompt: 마지막 프롬프트 ${lastSkip ?? describeVerdict(lastVerdict)}` }
+    // 입력 방식이 0 / 0이면 이 화면에서는 입력창 편집이 mod에 오지 않아, 텍스트 모양만으로 판정한 것이다.
+    const stats = lastEdits ? ` (입력 방식: 키로 친 글자 ${lastEdits.keyed} / 한 번에 들어온 글자 ${lastEdits.keyless})` : ''
+
+    return { text: `transprompt: 마지막 프롬프트 ${lastSkip ?? describeVerdict(lastVerdict)}${stats}` }
   }
   if (arg === 'on' || arg === 'off') {
     await $.store.set('transpromptEnabled', arg === 'on')
@@ -273,9 +294,10 @@ export const registerTransprompt: Register = (on, options) => {
     edits = { keyed: 0, keyless: 0 }
     draftLength = 0
     const isPersonTyped = e.origin.kind === 'composer' || e.origin.kind === 'bridge'
-    if (!isPersonTyped || e.command || e.isMeta || e.attachments?.length) {
+    if (!isPersonTyped || e.isMeta || e.attachments?.length) {
       return next(e)
     }
+    lastEdits = typedEdits
     if (await read($, bypassNext)) {
       await update($, bypassNext, () => false)
       return next(e)
@@ -284,26 +306,33 @@ export const registerTransprompt: Register = (on, options) => {
       lastSkip = '판정 안 함: transprompt가 꺼져 있습니다.'
       return next(e)
     }
-    const length = e.text.trim().length
+    // 스킬을 부른 뒤 받아쓴 내용은 스킬 이름 뒤의 내용만 판정한다. 내장 명령은 drop해도 이미 돌았으므로 건드리지 않는다.
+    const command = e.command?.name
+    if (command !== undefined && !(await isSkillCommand($, command))) {
+      lastSkip = `판정 안 함: /${command}는 내장 명령입니다.`
+      return next(e)
+    }
+    const body = e.command ? e.command.args : e.text
+    const length = body.trim().length
     if (length < minChars) {
       lastSkip = `판정 안 함: ${length}자로 최소 ${minChars}자보다 짧습니다.`
       return next(e)
     }
     lastSkip = undefined
-    lastVerdict = judgeVoice(e.text, typedEdits, voiceThreshold)
+    lastVerdict = judgeVoice(body, typedEdits, voiceThreshold)
     if (voiceGate && !lastVerdict.isVoice) {
       return next(e)
     }
 
     // 자동 모드는 사람을 기다리지 않으므로 패널이 입력 포커스를 가져가지 않는다. 진행을 보여 주고 취소할 길만 남긴다.
     if (await isAuto($, settings)) {
-      void structure($, e.text, model, true)
+      void structure($, body, model, true, command)
       void $.ui.open({ id: PANE, title: TITLE })
 
       return { drop: 'transprompt: 구조화해서 바로 보냅니다' }
     }
 
-    void structure($, e.text, model, false)
+    void structure($, body, model, false, command)
     void $.ui.open({ id: PANE, title: TITLE, focus: true, closeOnEscape: true })
 
     return { drop: 'transprompt: 구조화한 뒤 승인을 받아 보냅니다' }
@@ -319,7 +348,7 @@ export const registerTransprompt: Register = (on, options) => {
       $.ui.status(undefined)
       await update($, draft, () => null)
       if (current) {
-        await $.prompt.fill({ text: current.raw })
+        await $.prompt.fill({ text: withCommand(current.raw, current.command) })
       }
     }
 
@@ -348,12 +377,13 @@ export const registerTransprompt: Register = (on, options) => {
             <Text color="warning" weight="semibold">구조화 중</Text>
             <Text dimColor size="caption">
               {current.raw.length}자 · {seconds}초 경과 · {model}
+              {current.command ? ` · /${current.command}에 넘김` : ''}
               {current.auto ? ' · 끝나면 바로 보냅니다' : ''}
             </Text>
           </Box>
           <Box flexDirection="row" gap={2} flexWrap="wrap">
-            <Button key="raw" hotkey="3" plain dimColor label="원문 그대로 보내기" onPress={() => send($, current.raw)} />
-            <Button key="cancel" hotkey="5" plain dimColor label="취소 (원문을 입력창으로)" onPress={() => toPrompt($, current.raw, false)} />
+            <Button key="raw" hotkey="3" plain dimColor label="원문 그대로 보내기" onPress={() => send($, current.raw, current.command)} />
+            <Button key="cancel" hotkey="5" plain dimColor label="취소 (원문을 입력창으로)" onPress={() => toPrompt($, current.raw, false, current.command)} />
           </Box>
           <Box borderStyle="round" paddingX={1}>
             <Text dimColor>{excerpt(current.raw)}</Text>
@@ -370,11 +400,11 @@ export const registerTransprompt: Register = (on, options) => {
             <Text dimColor size="caption">{current.reason}</Text>
           </Box>
           <Box flexDirection="row" gap={1} flexWrap="wrap">
-            <Button key="retry" hotkey="4" variant="primary" autoFocus label="다시 구조화" onPress={() => structure($, current.raw, model, false)} />
-            <Button key="raw" hotkey="3" label="원문 그대로 보내기" onPress={() => send($, current.raw)} />
+            <Button key="retry" hotkey="4" variant="primary" autoFocus label="다시 구조화" onPress={() => structure($, current.raw, model, false, current.command)} />
+            <Button key="raw" hotkey="3" label="원문 그대로 보내기" onPress={() => send($, current.raw, current.command)} />
           </Box>
           <Box flexDirection="row" gap={2} flexWrap="wrap">
-            <Button key="cancel" hotkey="5" plain dimColor label="취소 (원문을 입력창으로)" onPress={() => toPrompt($, current.raw, false)} />
+            <Button key="cancel" hotkey="5" plain dimColor label="취소 (원문을 입력창으로)" onPress={() => toPrompt($, current.raw, false, current.command)} />
           </Box>
           <Box borderStyle="round" paddingX={1}>
             <Text dimColor>{excerpt(current.raw)}</Text>
@@ -391,16 +421,17 @@ export const registerTransprompt: Register = (on, options) => {
           <Text color="suggestion" weight="semibold">검토 대기</Text>
           <Text dimColor size="caption">
             원문 {current.raw.length}자 → 구조화 {current.structured.length}자{verdict}
+            {current.command ? ` · /${current.command}에 넘김` : ''}
           </Text>
         </Box>
         <Box flexDirection="row" gap={1} flexWrap="wrap">
-          <Button key="approve" hotkey="1" variant="primary" autoFocus label="승인하고 보내기" onPress={() => send($, current.structured)} />
-          <Button key="edit" hotkey="2" label="입력창에서 고치기" onPress={() => toPrompt($, current.structured, true)} />
+          <Button key="approve" hotkey="1" variant="primary" autoFocus label="승인하고 보내기" onPress={() => send($, current.structured, current.command)} />
+          <Button key="edit" hotkey="2" label="입력창에서 고치기" onPress={() => toPrompt($, current.structured, true, current.command)} />
         </Box>
         <Box flexDirection="row" gap={2} flexWrap="wrap">
-          <Button key="raw" hotkey="3" plain dimColor label="원문 그대로" onPress={() => send($, current.raw)} />
-          <Button key="retry" hotkey="4" plain dimColor label="다시 구조화" onPress={() => structure($, current.raw, model, false)} />
-          <Button key="cancel" hotkey="5" plain dimColor label="취소" onPress={() => toPrompt($, current.raw, false)} />
+          <Button key="raw" hotkey="3" plain dimColor label="원문 그대로" onPress={() => send($, current.raw, current.command)} />
+          <Button key="retry" hotkey="4" plain dimColor label="다시 구조화" onPress={() => structure($, current.raw, model, false, current.command)} />
+          <Button key="cancel" hotkey="5" plain dimColor label="취소" onPress={() => toPrompt($, current.raw, false, current.command)} />
         </Box>
         <Box flexDirection="row" gap={2}>
           <Button key="tab-structured" hotkey="s" plain dimColor={view !== 'structured'} label="구조화본" onPress={() => showView($, 'structured')} />

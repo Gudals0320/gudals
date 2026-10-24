@@ -1,7 +1,8 @@
+// `command`: the skill the person called before dictating; `raw` is then only what came after its name.
 export type Draft =
-  | { phase: 'structuring'; raw: string; startedAt: number; auto: boolean }
-  | { phase: 'ready'; raw: string; structured: string }
-  | { phase: 'failed'; raw: string; reason: string }
+  | { phase: 'structuring'; raw: string; startedAt: number; auto: boolean; command?: string }
+  | { phase: 'ready'; raw: string; structured: string; command?: string }
+  | { phase: 'failed'; raw: string; reason: string; command?: string }
 
 // ── monitor ─────────────────────────────────────────────────────────────
 

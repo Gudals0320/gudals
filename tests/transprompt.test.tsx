@@ -318,3 +318,67 @@ test('/transprompt review asks for approval again, and auto turns it back off', 
   const auto = await $.command.run({ command: 'gudals:transprompt', args: 'auto' })
   expect(auto.text).toContain('자동 전송')
 })
+
+const COMMANDS = [
+  { name: 'gudals:write-ko', description: '', source: 'plugin' },
+  { name: 'compact', description: '', source: 'builtin' },
+]
+
+test('dictation after a skill call is structured and handed back to that skill', { options: { transpromptMinChars: 50 } }, async ($, on) => {
+  const sent: string[] = []
+  const ran: { command: string; args: string }[] = []
+  mock.store(on)
+  const clock = mock.clock(on)
+  on('command.list', () => ({ value: COMMANDS }))
+  on('command.run', (_, e) => {
+    ran.push({ command: e.command, args: e.args })
+    return { text: '' }
+  })
+  on('model.complete', () => ({ value: { isAnswered: true, text: STRUCTURED, usage: USAGE } }))
+  on('command.register', () => ({ value: { command: 'transprompt' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.close', () => ({ value: undefined }))
+  on('ui.status', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('prompt.submit', (_, e) => {
+    sent.push(e.text)
+    return { text: e.text }
+  })
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const held = await $.prompt.submit({
+    text: `/gudals:write-ko ${RAW}`,
+    command: { name: 'gudals:write-ko', args: RAW },
+    wait: false,
+    origin: { kind: 'composer' },
+  })
+  expect(held.drop).toBeDefined()
+
+  await clock.settle()
+  expect(sent).toEqual([])
+  expect(ran.length).toBe(1)
+  expect(ran[0].command).toBe('gudals:write-ko')
+  expect(ran[0].args).toContain('# 로그인 페이지 수정')
+})
+
+test('a built-in command is left alone, and why shows how the prompt was entered', { options: { transpromptMinChars: 50 } }, async ($, on) => {
+  mock.store(on)
+  on('command.list', () => ({ value: COMMANDS }))
+  on('command.register', () => ({ value: { command: 'transprompt' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const passed = await $.prompt.submit({
+    text: `/compact ${RAW}`,
+    command: { name: 'compact', args: RAW },
+    wait: false,
+    origin: { kind: 'composer' },
+  })
+  expect(passed.drop).toBeUndefined()
+
+  const why = await $.command.run({ command: 'transprompt', args: 'why' })
+  expect(why.text).toContain('/compact는 내장 명령')
+  expect(why.text).toContain('키로 친 글자 0 / 한 번에 들어온 글자 0')
+})

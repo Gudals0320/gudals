@@ -38,3 +38,48 @@ test('the voice gate tells dictation from typing', () => {
     expect(`${name}: ${verdict.isVoice}`).toBe(`${name}: ${expected}`)
   }
 })
+
+// 끊어서 녹음해 마침표가 들어간 음성
+const VOICE_SEGMENTED =
+  '로그인 페이지를 좀 고치고 싶어. 비밀번호 찾기 버튼이 안 보이거든. 그거 보이게 해 주고. 에러 메시지가 영어로 나오는데 한국어로 바꿔 줬으면 좋겠어. 테스트도 같이 돌려 줘.'
+
+// 군말 없이 받아쓰기 도구가 깔끔하게 정리한 음성
+const VOICE_CLEAN =
+  '트랜스프롬프트 판별 로직에서 마침표 유무가 너무 크게 반영되는 것 같아. 녹음을 끊어서 하면 마침표가 계속 들어가는데, 그럴 때 음성으로 판정이 잘 안 돼. 한 번에 들어온 형태를 보는 건 좋으니까 그건 유지하고, 기준을 어떻게 바꿀지 제안해 줘.'
+
+const TYPED_NUMBERED = '1. 빌드 고치기 2. 테스트 추가 3. README 업데이트 4. 배포 노트 작성 순서대로 해줘. 마감은 금요일이고 리뷰는 내가 할게.'
+const TYPED_HEADING_SPOKEN =
+  '# 로그인 버그\n비밀번호 찾기 버튼이 안 보임. 고쳐줘. 그리고 에러 메시지도 한국어로 바꿔 줬으면 좋겠어. 테스트도 같이 돌려 줘 근데 오래 걸리면 말해 줘.'
+const TYPED_STAR_SPOKEN =
+  '이거 정리해줘\n* 로그인 페이지 비밀번호 찾기 버튼 보이게 하고 그리고 에러 메시지 한국어로 바꾸고 그러니까 테스트도 같이 돌려 줘 근데 급한 거는 아니거든'
+
+test('periods, a line break or two, and a skill call do not count against dictation', () => {
+  const twoBreaks = VOICE_SEGMENTED.replace('거든. ', '거든.\n').replace('주고. ', '주고.\n')
+  const cases = [
+    ['VOICE_SEGMENTED', VOICE_SEGMENTED],
+    ['VOICE_SEGMENTED with two line breaks', twoBreaks],
+    ['VOICE_SEGMENTED after a skill call', `/gudals:write-ko ${VOICE_SEGMENTED}`],
+    ['VOICE_CLEAN', VOICE_CLEAN],
+  ] as const
+
+  for (const [name, text] of cases) {
+    const verdict = judgeVoice(text, NO_EDITS, 2)
+    expect(`${name}: ${verdict.isVoice}`).toBe(`${name}: true`)
+  }
+})
+
+test('markdown blocks for sure, and a numbered list counts as typing, even when it arrived at once', () => {
+  const cases = [
+    ['TYPED_NUMBERED', TYPED_NUMBERED],
+    ['TYPED_HEADING_SPOKEN', TYPED_HEADING_SPOKEN],
+    ['TYPED_STAR_SPOKEN', TYPED_STAR_SPOKEN],
+  ] as const
+
+  for (const [name, text] of cases) {
+    for (const edits of [NO_EDITS, { keyed: 0, keyless: text.length }]) {
+      const verdict = judgeVoice(text, edits, 2)
+      expect(`${name} ${edits.keyless}: ${verdict.isVoice}`).toBe(`${name} ${edits.keyless}: false`)
+    }
+  }
+  expect(judgeVoice(TYPED_STAR_SPOKEN, NO_EDITS, 2).reasons).toContain('마크다운 문법 있음 (타이핑으로 확정)')
+})
