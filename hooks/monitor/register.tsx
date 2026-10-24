@@ -1010,10 +1010,23 @@ export function registerMonitor(on: On) {
     const groupHeight = (one: (typeof framedGroups)[number]) =>
       GROUP_ROOM + GROUP_FOOT + one.members.reduce((sum, island) => sum + heightOf(island, BADGE_ROOM.top), 0)
     const mixedColumns = (list: typeof framedGroups, loose: IslandView[]) => {
+      // Groups and islands in one order: by their most pressing island's tier, then the latest activity.
       const blocks = [
-        ...list.map(one => ({ key: `g:${one.group.id}`, height: groupHeight(one), draw: () => groupFrame(one) })),
-        ...loose.map(island => ({ key: `i:${island.key}`, height: heightOf(island, BADGE_ROOM.top), draw: () => placed(island, BADGE_ROOM.top, true) })),
-      ]
+        ...list.map(one => ({
+          key: `g:${one.group.id}`,
+          rank: one.rank,
+          latest: Math.max(...one.members.map(island => island.latest)),
+          height: groupHeight(one),
+          draw: () => groupFrame(one),
+        })),
+        ...loose.map(island => ({
+          key: `i:${island.key}`,
+          rank: TIER_ORDER[island.tier],
+          latest: island.latest,
+          height: heightOf(island, BADGE_ROOM.top),
+          draw: () => placed(island, BADGE_ROOM.top, true),
+        })),
+      ].sort((a, b) => a.rank - b.rank || b.latest - a.latest)
       if (blocks.length === 1) return <Box key="mixed" flexDirection="column">{blocks[0]!.draw()}</Box>
       const columns: (typeof blocks)[] = [[], []]
       const sums = [0, 0]
@@ -1079,6 +1092,8 @@ export function registerMonitor(on: On) {
             {/* A group's islands stack in one column, top to bottom. */}
             {members.map(island => (
               <Box key={`grprow:${island.key}`} flexDirection="row">
+                {/* The same room on the left as each card keeps on its right for its mark. */}
+                {picture(spacerPiece(BADGE_ROOM.right, 1))}
                 {placed(island, BADGE_ROOM.top, true)}
               </Box>
             ))}
