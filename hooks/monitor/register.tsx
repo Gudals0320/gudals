@@ -35,6 +35,10 @@ const BOX_CELL_PX = 8
 const CARD_MIN_CELLS = 38
 // Two columns of cards replace rows of two when they leave at least this much less empty room.
 const MASONRY_GAIN_PX = 80
+// The gap between two columns of cards, in cells, beside the room each card keeps for its mark.
+const COLUMN_GAP = 1
+// The share of a line a working session's title may take, so its activity stays in view.
+const TITLE_SHARE = '40%'
 // Dash tiles in a dashed line: enough for a pane 2000px wide.
 const DASH_TILES = 7
 const BOARD_PAD = 8
@@ -104,6 +108,9 @@ const dotOf = (state: MonitorState): DotState =>
   state === 'waiting' ? 'waiting' : state === 'idle' ? 'paused' : state === 'background' ? 'background' : 'working'
 // A row's dot: as its state's, but a prompt a hook dropped is its own, red.
 const rowDot = (row: MonitorRow): DotState => (row.state === 'waiting' && row.waitKind === 'blocked' ? 'blocked' : dotOf(row.state))
+
+// A worktree's tag: its folder, less the prefix every coordinate worktree shares.
+const worktreeLabel = (cwd: string) => folderName(cwd).replace(/^coord-/, '')
 
 function folderName(cwd: string) {
   const last = cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? ''
@@ -690,7 +697,8 @@ export function registerMonitor(on: On) {
       const lines: JSX.Element[] = [
         <Box key={`node:${row.id}`} flexDirection="row" alignItems="center" gap="xs" hover={{ backgroundColor: C.panel3 }}>
           {picture(gutterPiece(state, depth, { through, isLast, hasChildren: children.length > 0, accent }))}
-          <Box flexGrow={activity ? 0 : 1} flexShrink={1} minWidth={0}>
+          {/* With an activity, the title takes at most about 40% of the line and the activity the rest. */}
+          <Box flexGrow={activity ? 0 : 1} flexShrink={1} minWidth={0} width={activity ? TITLE_SHARE : undefined}>
             <Button key={`open:${row.id}`} plain onPress={open(row)}>
               <Text size="footnote" wrap="truncate-end">{row.title}</Text>
             </Button>
@@ -700,7 +708,7 @@ export function registerMonitor(on: On) {
               <Text size="caption" color={C.green} wrap="truncate-end">{activity}</Text>
             </Box>
           )}
-          {isWorktree && picture(worktreePiece(folderName(row.cwd)))}
+          {isWorktree && picture(worktreePiece(worktreeLabel(row.cwd)))}
           {island.key === FOLDERLESS && seenless.has(keyOf(row)) && picture(newDotPiece())}
           <Box flexShrink={0} paddingRight="xs">
             <Text size="caption" mono color={C.fg3}>{age(at, row.since)}</Text>
@@ -951,13 +959,13 @@ export function registerMonitor(on: On) {
       })
       if (pairWaste - Math.abs(sums[0]! - sums[1]!) <= MASONRY_GAIN_PX) {
         return (
-          <Box key={key} flexDirection="row" flexWrap="wrap" alignItems="stretch">
+          <Box key={key} flexDirection="row" flexWrap="wrap" alignItems="stretch" columnGap={COLUMN_GAP}>
             {members.map(island => placed(island, room, false))}
           </Box>
         )
       }
       return (
-        <Box key={key} flexDirection="row" flexWrap="wrap" alignItems="flex-start">
+        <Box key={key} flexDirection="row" flexWrap="wrap" alignItems="flex-start" columnGap={COLUMN_GAP}>
           {columns.map((column, side) => (
             <Box key={`${key}:col${side}`} flexDirection="column" width={CARD_MIN_CELLS} minWidth={0} flexGrow={1} flexShrink={1}>
               {column.map(island => placed(island, room, true))}
@@ -987,7 +995,7 @@ export function registerMonitor(on: On) {
         sums[side]! += GROUP_ROOM + GROUP_FOOT + one.members.reduce((sum, island) => sum + heightOf(island, BADGE_ROOM.top), 0)
       }
       return (
-        <Box key={key} flexDirection="row" flexWrap="wrap" alignItems="flex-start">
+        <Box key={key} flexDirection="row" flexWrap="wrap" alignItems="flex-start" columnGap={COLUMN_GAP}>
           {columns.map((column, side) => (
             <Box key={`${key}:col${side}`} flexDirection="column" width={CARD_MIN_CELLS} minWidth={0} flexGrow={1} flexShrink={1}>
               {column.map(groupFrame)}
@@ -1015,7 +1023,7 @@ export function registerMonitor(on: On) {
         sums[side]! += block.height
       }
       return (
-        <Box key="mixed" flexDirection="row" flexWrap="wrap" alignItems="flex-start">
+        <Box key="mixed" flexDirection="row" flexWrap="wrap" alignItems="flex-start" columnGap={COLUMN_GAP}>
           {columns.map((column, side) => (
             <Box key={`mixed:col${side}`} flexDirection="column" width={CARD_MIN_CELLS} minWidth={0} flexGrow={1} flexShrink={1}>
               {column.map(block => (
