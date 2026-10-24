@@ -55,6 +55,12 @@ export type MonitorFilter = 'all' | 'wait' | 'work' | 'new'
 // The one-off flash an island shows after a session in it changed state, by the new state.
 export type MonitorFlash = 'waiting' | 'working' | 'other'
 
+// Islands the person put in one frame, by island key; kept across sessions.
+export type MonitorGroup = { id: string; name: string; keys: string[] }
+
+// While grouping: the island looking for a partner, or the group taking one more.
+export type MonitorPick = { kind: 'island'; key: string; name: string } | { kind: 'group'; id: string }
+
 export type MonitorView = {
   at: number
   rows: MonitorRow[]
@@ -65,6 +71,12 @@ export type MonitorView = {
   flash?: Record<string, MonitorFlash>
   // Dormant islands the person unfolded, by island key.
   openCold?: string[]
+  // Sessions whose stopped sub-sessions the person unfolded, by session id.
+  openFold?: string[]
+  groups?: MonitorGroup[]
+  picking?: MonitorPick
+  // The group whose name is being edited.
+  renaming?: string
   filter?: MonitorFilter
   // Answers sent from the board to sessions still on that question: the button's label, by session.
   sent?: Record<string, string>

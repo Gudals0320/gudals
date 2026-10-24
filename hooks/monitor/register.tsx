@@ -1,11 +1,11 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface as Engine, On } from 'claude-code'
 
-import type { MonitorFilter, MonitorFlash, MonitorObserved, MonitorProbe, MonitorRow, MonitorState, MonitorView } from '../../types'
+import type { MonitorFilter, MonitorFlash, MonitorGroup, MonitorObserved, MonitorPick, MonitorProbe, MonitorRow, MonitorState, MonitorView } from '../../types'
 import { MIN, classify, describeActivity, parseEvents, sessionLink } from './classify'
 import { describeBackground, readChoice, readLocal } from './local'
 import type { Block, Choice } from './local'
-import { C, NODE_PX, badgePiece, cardCornerPiece, cardSidePiece, chipDotPiece, dashTilePiece, dotPiece, fade, fitText, frameLineSource, frameSide, glintPiece, gutterPiece, newDotPiece, pillPiece, railPiece, spacerPiece, stubPiece, worktreePiece } from './pieces'
+import { C, NODE_PX, badgePiece, cardCornerPiece, cardSidePiece, dashTilePiece, dotPiece, elbowPiece, frameLineSource, frameSide, glintPiece, gutterPiece, newDotPiece, pillPiece, railPiece, spacerPiece, worktreePiece } from './pieces'
 import type { DotState, Frame, Piece } from './pieces'
 
 // The monitor pulls: it reads the app's session list and each session's recent transcript when it
@@ -22,7 +22,10 @@ const OBSERVED_KEY = 'monitorObserved'
 const UNSEEN_KEY = 'monitorUnseen'
 const OPEN_COLD_KEY = 'monitorOpenCold'
 const DISMISSED_KEY = 'monitorDismissed'
-// An island quiet this long folds into mini chips below the "휴면" line.
+const GROUPS_KEY = 'monitorGroups'
+// A session's stopped sub-sessions beyond this many fold into one "+ N" line.
+const FOLD_KEEP = 2
+// An island quiet this long goes below the "휴면" line, as a chip.
 const COLD_MS = 120 * MIN
 const FLASH_MS = 900
 // A Box width in cells draws this many pixels to the cell (measured on the desktop).
@@ -35,12 +38,9 @@ const MASONRY_GAIN_PX = 80
 // Dash tiles in a dashed line: enough for a pane 2000px wide.
 const DASH_TILES = 7
 const BOARD_PAD = 8
-// A folded dormant card: the prototype's opacity, at rest and under the pointer, and its padding.
-const FADED = 0.6
-const FADED_HOVER = 0.85
-const FADED_PAD = 6
-// A mini chip is at most this wide.
-const CHIP_PX = 200
+// The room above a group's frame, for the label on its top edge; the tint of what can be picked.
+const GROUP_ROOM = 12
+const PICK_BG = '#1c2422'
 // How tall the desktop draws a plain button with a caption label.
 const BUTTON_PX = 20
 // Room kept above and right of every card for its unseen mark, which sits on the card's corner.
@@ -65,6 +65,13 @@ const probes = new Map<string, { lastActivityAt: number; probe: MonitorProbe }>(
 // islands unfolded, flashes still running.
 let unseen = new Set<string>()
 let openCold = new Set<string>()
+// Sessions whose stopped sub-sessions the person unfolded, by session id.
+const openFold = new Set<string>()
+// Islands the person framed together; kept across sessions.
+let groups: MonitorGroup[] = []
+// While grouping: what is looking for a partner. Editing: the group being renamed.
+let picking: MonitorPick | undefined
+let renaming: string | undefined
 const flashes = new Map<string, { kind: MonitorFlash; until: number }>()
 // Dev only: sample rows that show every part of the board, for checking the layout.
 let isDemo = false
@@ -275,9 +282,13 @@ async function publish($: Engine, at: number, rows: MonitorRow[], error?: string
     unseen: [...unseen],
     flash: Object.fromEntries([...flashes].map(([key, one]) => [key, one.kind])),
     openCold: [...openCold],
+    openFold: [...openFold],
+    groups,
     filter,
     sent: Object.fromEntries([...sent].map(([id, one]) => [id, one.label])),
   }
+  if (picking) next.picking = picking
+  if (renaming) next.renaming = renaming
   if (forcedWidth) next.forcedWidth = forcedWidth
   if (error) next.error = error
   await update($, view, () => next)
@@ -374,6 +385,57 @@ async function toggleCold($: Engine, key: string) {
   await settleFlash($)
 }
 
+async function toggleFold($: Engine, id: string) {
+  if (openFold.has(id)) openFold.delete(id)
+  else openFold.add(id)
+  await settleFlash($)
+}
+
+// Grouping. A group holds island keys; one left with a single island is no group.
+async function saveGroups($: Engine, next: MonitorGroup[]) {
+  groups = next.filter(group => group.keys.length > 1)
+  picking = undefined
+  await $.store.set(GROUPS_KEY, groups)
+  await settleFlash($)
+}
+
+// Starts, or with the same one again cancels, picking a partner for an island or a group.
+async function pick($: Engine, next: MonitorPick) {
+  const same = picking && picking.kind === next.kind && (picking.kind === 'island' ? picking.key === (next as { key: string }).key : picking.id === (next as { id: string }).id)
+  picking = same ? undefined : next
+  renaming = undefined
+  await settleFlash($)
+}
+
+// The partner picked: an island joins the group being added to, or two islands form a group, or
+// an island joins the group it was dropped on.
+async function join($: Engine, target: { kind: 'island'; key: string } | { kind: 'group'; id: string }) {
+  const from = picking
+  if (!from) return
+  const add = (id: string, key: string) => groups.map(group => (group.id === id && !group.keys.includes(key) ? { ...group, keys: [...group.keys, key] } : group))
+  if (from.kind === 'group' && target.kind === 'island') return saveGroups($, add(from.id, target.key))
+  if (from.kind === 'island' && target.kind === 'group') return saveGroups($, add(target.id, from.key))
+  if (from.kind === 'island' && target.kind === 'island') {
+    const id = `g${Math.round(await $.clock.now()).toString(36)}`
+    return saveGroups($, [...groups, { id, name: `${from.name} 외`, keys: [from.key, target.key] }])
+  }
+}
+
+const leaveGroup = ($: Engine, key: string) => saveGroups($, groups.map(group => ({ ...group, keys: group.keys.filter(one => one !== key) })))
+const ungroup = ($: Engine, id: string) => saveGroups($, groups.filter(group => group.id !== id))
+
+async function startRename($: Engine, id?: string) {
+  renaming = id
+  picking = undefined
+  await settleFlash($)
+}
+
+async function rename($: Engine, id: string, name: string) {
+  renaming = undefined
+  const trimmed = name.trim()
+  await saveGroups($, trimmed ? groups.map(group => (group.id === id ? { ...group, name: trimmed.slice(0, 40) } : group)) : groups)
+}
+
 // Opening a claude:// link through the OS moves the app's main window to that session.
 async function openSession($: Engine, id: string) {
   const link = sessionLink(id)
@@ -451,6 +513,7 @@ async function restore($: Engine) {
   unseen = new Set(saved ?? [])
   openCold = new Set(unfolded ?? [])
   dismissed = new Set(closed ?? [])
+  groups = ((await $.store.get(GROUPS_KEY)) as MonitorGroup[] | undefined) ?? []
 }
 
 // A row's time for sorting: when it entered its state, else its last activity.
@@ -539,7 +602,7 @@ export function registerMonitor(on: On) {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const elements = $.ui.resolve(e)
-    const { Box, Text, Button } = elements
+    const { Box, Text, Button, Input } = elements
     const Svg = 'Svg' in elements ? elements.Svg : undefined
     lastColumns = e.viewport?.columns ?? 0
     // A pane still open from before (the app restarted, the plugin reloaded) starts the monitor
@@ -602,11 +665,18 @@ export function registerMonitor(on: On) {
     }
     const waiting = rows.filter(row => row.state === 'waiting').sort((a, b) => timeOf(a) - timeOf(b))
 
-    // One session's rows: the node, what it asks or does, then its children. `through` names the
-    // depths whose child line runs on past these rows.
+    // One session's rows: the node, what it asks, its shells, then its children. A working
+    // session's activity sits on its own line, after the title; the sweep is the island's.
+    // `through` names the depths whose child line runs on past these rows.
     const node = (island: IslandView, row: MonitorRow, depth: number, through: number[], isLast: boolean): JSX.Element[] => {
       const state = rowDot(row)
       const children = childrenOf(island, row.id)
+      // Stopped sub-sessions beyond the first few fold into one line, unless unfolded; live ones never.
+      const stopped = children.filter(child => rowDot(child) === 'paused' || rowDot(child) === 'done')
+      const canFold = stopped.length > FOLD_KEEP + 1
+      const isUnfolded = openFold.has(row.id)
+      const hidden = new Set(canFold && !isUnfolded ? stopped.slice(FOLD_KEEP).map(child => child.id) : [])
+      const shown = children.filter(child => !hidden.has(child.id))
       const goesOn = depth > 0 && !isLast ? [...through, depth - 1] : through
       // What crosses the rows under the node: its parent's line while a sibling follows, its own when it has children.
       const under = children.length ? [...goesOn, depth] : goesOn
@@ -614,17 +684,23 @@ export function registerMonitor(on: On) {
       const fill = (text: JSX.Element) => <Box flexGrow={1} flexShrink={1} minWidth={0}>{text}</Box>
       const isWorktree = row.cwd !== island.key && island.key !== FOLDERLESS
       const accent = state === 'blocked' ? C.hook : state === 'waiting' ? C.amber : state === 'working' ? C.green : undefined
+      const activity = state === 'working' && row.activity
       const lines: JSX.Element[] = [
-        <Box key={`node:${row.id}`} flexDirection="row" alignItems="center" hover={{ backgroundColor: C.panel3 }}>
+        <Box key={`node:${row.id}`} flexDirection="row" alignItems="center" gap="xs" hover={{ backgroundColor: C.panel3 }}>
           {picture(gutterPiece(state, depth, { through, isLast, hasChildren: children.length > 0, accent }))}
-          {fill(
+          <Box flexGrow={activity ? 0 : 1} flexShrink={1} minWidth={0}>
             <Button key={`open:${row.id}`} plain onPress={open(row)}>
               <Text size="footnote" wrap="truncate-end">{row.title}</Text>
-            </Button>,
+            </Button>
+          </Box>
+          {activity && (
+            <Box flexGrow={1} flexShrink={3} minWidth={0}>
+              <Text size="caption" color={C.green} wrap="truncate-end">{activity}</Text>
+            </Box>
           )}
           {isWorktree && picture(worktreePiece(folderName(row.cwd)))}
           {island.key === FOLDERLESS && seenless.has(keyOf(row)) && picture(newDotPiece())}
-          <Box flexShrink={0} paddingLeft="xs" paddingRight="xs">
+          <Box flexShrink={0} paddingRight="xs">
             <Text size="caption" mono color={C.fg3}>{age(at, row.since)}</Text>
           </Box>
         </Box>,
@@ -670,28 +746,9 @@ export function registerMonitor(on: On) {
             </Box>,
           )
         }
-      } else if (state === 'working') {
-        // No activity read yet: the sweep alone says it works; no stand-in words.
-        if (row.activity) {
-          lines.push(
-            <Box key={`act:${row.id}`} flexDirection="row" alignItems="center">
-              {rail(19)}
-              {fill(<Text size="caption" color={C.green} wrap="truncate-end">{row.activity}</Text>)}
-            </Box>,
-          )
-        }
-        lines.push(
-          <Box key={`sweep:${row.id}`} flexDirection="row" alignItems="flex-start">
-            {rail(7)}
-            <Box position="relative" flexGrow={1} flexShrink={1} minWidth={0} paddingRight="xs">
-              {solid('bar', C.line, 2)}
-              <Box position="absolute" top={0} left={0}>{picture(glintPiece())}</Box>
-            </Box>
-          </Box>,
-        )
       }
       // The shells a session runs, under it: while it works, and alone once it has stopped and
-      // only they run on (no activity line, no sweep: the session itself does nothing).
+      // only they run on.
       if (state === 'working' || state === 'background') {
         lines.push(
           ...(row.tasks ?? []).map((task, i) => (
@@ -708,30 +765,57 @@ export function registerMonitor(on: On) {
           )),
         )
       }
-      children.forEach((child, i) => lines.push(...node(island, child, depth + 1, goesOn, i === children.length - 1)))
+      const foldLine = canFold
+      shown.forEach((child, i) => lines.push(...node(island, child, depth + 1, goesOn, i === shown.length - 1 && !foldLine)))
+      if (foldLine) {
+        lines.push(
+          <Box key={`fold:${row.id}`} flexDirection="row" alignItems="center">
+            {picture(elbowPiece(depth + 1, 22, goesOn))}
+            <Button key={`more:${row.id}`} plain dimColor onPress={() => void toggleFold($, row.id)}>
+              <Text size="caption">{isUnfolded ? '− 접기' : `+ 멈춘 하위 세션 ${hidden.size}개`}</Text>
+            </Button>
+          </Box>,
+        )
+      }
       return lines
+    }
+
+    // What an island's head offers while grouping: leave its group, start, cancel, or take the
+    // island or group being picked for.
+    const groupOf = new Map(groups.flatMap(group => group.keys.map(key => [key, group] as const)))
+    const isTarget = (island: IslandView) => {
+      if (!picking || groupOf.has(island.key)) return false
+      return picking.kind === 'group' || picking.key !== island.key
+    }
+    const headAction = (island: IslandView) => {
+      const action = (key: string, label: string, onPress: () => void, isStrong = false) => (
+        <Button key={key} plain dimColor={!isStrong} onPress={onPress}>
+          <Text size="caption">{label}</Text>
+        </Button>
+      )
+      if (groupOf.has(island.key)) return action(`leave:${island.key}`, '빼기', () => void leaveGroup($, island.key))
+      if (isTarget(island)) return action(`join:${island.key}`, picking?.kind === 'group' ? '넣기' : '합치기', () => void join($, { kind: 'island', key: island.key }), true)
+      const isPicking = picking?.kind === 'island' && picking.key === island.key
+      return action(`group:${island.key}`, isPicking ? '취소' : '묶기', () => void pick($, { kind: 'island', key: island.key, name: island.name }), isPicking)
     }
 
     const islandCard = (island: IslandView) => {
       const isCold = island.tier === 'cold'
-      const isOpen = !isCold || unfolded.has(island.key)
-      // A folded dormant card is the prototype's at 60% opacity (85% under the pointer), drawn in
-      // the colours that shows; the folder-less island sits a step darker, on the board's colour.
-      const isFaded = isCold && !isOpen
       const isFolderless = island.key === FOLDERLESS
-      const tone = (color: string, opacity = isFaded ? FADED : 1) => (opacity < 1 ? fade(color, opacity) : color)
       const hotColor = island.best === 'blocked' ? C.hook : C.amber
-      const borderColor = island.tier === 'hot' ? hotColor : island.tier === 'live' ? C.green : isFolderless ? C.line2 : tone(C.line)
+      const target = isTarget(island)
+      const borderColor = target ? C.teal : island.tier === 'hot' ? hotColor : island.tier === 'live' ? C.green : isFolderless ? C.line2 : C.line
       const flashing = flash[island.key]
-      const base = isFolderless ? C.bg : tone(C.panel2)
+      const base = target ? PICK_BG : isFolderless ? C.bg : C.panel2
       const background = flashing === 'waiting' ? C.amberBg : flashing === 'working' ? C.greenBg : flashing === 'other' ? C.panel3 : base
       const whyColor = island.tier === 'hot' ? hotColor : island.tier === 'live' ? C.green : island.best === 'background' ? C.teal : C.fg3
+      const isWorking = island.rows.some(row => rowDot(row) === 'working')
       const head = (
         <Box key="head" flexDirection="row" alignItems="center" gap="xs">
-          {picture(dotPiece(isFaded && island.best === 'paused' ? 'done' : island.best))}
-          {isCold ? (
-            <Button key={`fold:${island.key}`} plain dimColor={isFaded} onPress={() => void toggleCold($, island.key)}>
-              <Text size="body" weight={isFaded ? 'medium' : 'semibold'}>{island.name}</Text>
+          {picture(dotPiece(island.best))}
+          {isCold && !groupOf.has(island.key) ? (
+            <Button key={`fold:${island.key}`} plain onPress={() => void toggleCold($, island.key)}>
+              <Text size="body" weight="semibold">{island.name}</Text>
             </Button>
           ) : (
             <Text size="body" weight="semibold" color={isFolderless ? C.fg2 : undefined} wrap="truncate-end">{island.name}</Text>
@@ -739,58 +823,32 @@ export function registerMonitor(on: On) {
           <Box flexGrow={1} flexShrink={1} minWidth={0}>
             <Text size="caption" color={whyColor} wrap="truncate-end">{isCold ? '' : island.why}</Text>
           </Box>
-          <Text size="caption" mono color={isFaded ? C.fg4 : C.fg3} hover={isFaded ? { color: C.fg3 } : undefined}>{String(island.rows.length)}</Text>
+          {headAction(island)}
+          <Text size="caption" mono color={C.fg3}>{String(island.rows.length)}</Text>
         </Box>
       )
       const roots = childrenOf(island, undefined)
-      const chipBack = tone(C.panel2)
-      const body = isOpen
-        ? [
-            <Box key="rule" flexDirection="column">
-              {picture(spacerPiece(1, 6))}
-              <Box flexDirection="row">{solid('line', C.line)}</Box>
-              {picture(spacerPiece(1, 6))}
-            </Box>,
-            ...roots.flatMap((row, i) => node(island, row, 0, [], i === roots.length - 1)),
-          ]
-        : [
-            <Box key="chips" flexDirection="row" flexWrap="wrap" gap="xs" paddingTop="xs">
-              {[...island.rows]
-                .sort((a, b) => (a.parentId ? 1 : 0) - (b.parentId ? 1 : 0) || timeOf(b) - timeOf(a))
-                .map(row => (
-                  <Box key={`minirow:${row.id}`} flexDirection="row" alignItems="center">
-                    {row.parentId && picture(stubPiece())}
-                    {framed(
-                      `mini:${row.id}`,
-                      { border: tone(C.line), fill: tone(C.panel), outside: chipBack },
-                      <Box flexDirection="row" alignItems="center">
-                        {picture(chipDotPiece(isFaded && rowDot(row) === 'paused' ? 'done' : rowDot(row)))}
-                        <Button key={`open:${row.id}`} plain dimColor onPress={open(row)}>
-                          <Text size="caption">{fitText(row.title, CHIP_PX - 13 - 12, 11)}</Text>
-                        </Button>
-                      </Box>,
-                    )}
-                  </Box>
-                ))}
-            </Box>,
-          ]
       const padded = (
-        <Box key="inside" flexDirection="column" paddingX={isFaded ? 'xs' : 'sm'} paddingY="xs">
+        <Box key="inside" flexDirection="column" paddingX="sm" paddingY="xs">
           {head}
-          {body}
+          <Box key="rule" flexDirection="column">
+            {picture(spacerPiece(1, isWorking ? 4 : 6))}
+            <Box flexDirection="row">{solid('line', C.line)}</Box>
+            {isWorking ? (
+              <Box position="relative" flexDirection="row">
+                {picture(spacerPiece(1, 6))}
+                <Box position="absolute" top={0} left={0}>{picture(glintPiece())}</Box>
+              </Box>
+            ) : (
+              picture(spacerPiece(1, 6))
+            )}
+          </Box>
+          {roots.flatMap((row, i) => node(island, row, 0, [], i === roots.length - 1))}
         </Box>
       )
-      if (!isFolderless) {
+      if (!isFolderless || target) {
         return (
-          <Box
-            key={`island:${island.key}`}
-            flexGrow={1}
-            flexDirection="column"
-            borderStyle="round"
-            borderColor={borderColor}
-            backgroundColor={background}
-            hover={isFaded ? { backgroundColor: fade(C.panel2, FADED_HOVER), borderColor: fade(C.line, FADED_HOVER) } : undefined}
-          >
+          <Box key={`island:${island.key}`} flexGrow={1} flexDirection="column" borderStyle="round" borderColor={borderColor} backgroundColor={background}>
             {padded}
           </Box>
         )
@@ -842,29 +900,28 @@ export function registerMonitor(on: On) {
     )
 
     // The board: waiting islands across the whole row, then the rest two abreast where the pane is
-    // wide enough; the dormant ones below their line, never moved up to fill a hole.
+    // wide enough; groups framed among them by their most pressing island; the dormant ones below
+    // their line as chips, never moved up to fill a hole.
     const matches = (island: IslandView) =>
       chosen === 'all' ||
       (chosen === 'wait' && island.rows.some(row => row.state === 'waiting')) ||
       (chosen === 'work' && island.rows.some(row => dotOf(row.state) === 'working')) ||
       (chosen === 'new' && hasUnseen(island))
     const islands = allIslands.filter(matches)
-    const hot = islands.filter(island => island.tier === 'hot')
-    const active = islands.filter(island => island.tier === 'live' || island.tier === 'warm')
-    const cold = islands.filter(island => island.tier === 'cold')
+    const free = islands.filter(island => !groupOf.has(island.key))
+    const hot = free.filter(island => island.tier === 'hot')
+    const active = free.filter(island => island.tier === 'live' || island.tier === 'warm')
+    const cold = free.filter(island => island.tier === 'cold')
     // About how tall a card draws, in pixels, from what it holds: enough to tell a long card from a
     // short one.
     const heightOf = (island: IslandView, room: number) => {
-      const isOpen = island.tier !== 'cold' || unfolded.has(island.key)
       const rowsOf = (row: MonitorRow) => {
-        const state = rowDot(row)
         const asks = row.state === 'waiting' ? 19 + (row.options?.length ? 30 : 0) : 0
-        const works = state === 'working' ? (row.activity ? 19 : 0) + 7 : 0
+        const state = rowDot(row)
         const shells = state === 'working' || state === 'background' ? (row.tasks?.length ?? 0) * 22 : 0
-        return NODE_PX + asks + works + shells
+        return NODE_PX + asks + shells
       }
-      const body = isOpen ? 13 + island.rows.reduce((sum, row) => sum + rowsOf(row), 0) : Math.ceil(island.rows.length / 2) * 25 + 6
-      return room + 26 + body + 12
+      return room + 26 + 13 + island.rows.reduce((sum, row) => sum + rowsOf(row), 0) + 12
     }
     // Two to a row, side by side at one height, while the cards are about as tall as each other.
     // Where they differ a lot, two columns instead, each card under the shorter one, so short cards
@@ -907,23 +964,101 @@ export function registerMonitor(on: On) {
         </Box>
       )
     }
+
+    // A group: one teal frame around its islands, each still its own card. Its name, its size and
+    // what can be done with it sit on a label in the frame's top edge, so it costs no row of its own.
+    const framedGroups = groups
+      .map(group => ({ group, members: islands.filter(island => group.keys.includes(island.key)) }))
+      .filter(one => one.members.length > 0)
+      .map(one => ({ ...one, rank: Math.min(...one.members.map(island => TIER_ORDER[island.tier])) }))
+      .sort((a, b) => a.rank - b.rank)
+    const groupFrame = ({ group, members }: { group: MonitorGroup; members: IslandView[] }) => {
+      const takes = picking?.kind === 'island'
+      const isAdding = picking?.kind === 'group' && picking.id === group.id
+      const sessions = members.reduce((sum, island) => sum + island.rows.length, 0)
+      const small = (key: string, label: string, onPress: () => void, isStrong = false) => (
+        <Button key={key} plain dimColor={!isStrong} onPress={onPress}>
+          <Text size="caption">{label}</Text>
+        </Button>
+      )
+      const label = (
+        <Box position="absolute" top={-1} left={2} flexDirection="row" alignItems="center" gap="xs" paddingX="xs" backgroundColor={C.bg}>
+          {renaming === group.id ? (
+            <>
+              <Input key={`name:${group.id}`} value={group.name} submitLabel="저장" onSubmit={(value: string) => void rename($, group.id, value)} />
+              {small(`rename-cancel:${group.id}`, '취소', () => void startRename($))}
+            </>
+          ) : (
+            <Button key={`rename:${group.id}`} plain onPress={() => void startRename($, group.id)}>
+              <Text size="caption" weight="semibold">{group.name}</Text>
+            </Button>
+          )}
+          <Text size="caption" color={C.fg3}>{`섬 ${members.length} · 세션 ${sessions}`}</Text>
+          {takes
+            ? small(`into:${group.id}`, '여기에 넣기', () => void join($, { kind: 'group', id: group.id }), true)
+            : small(`add:${group.id}`, isAdding ? '취소' : '+ 추가', () => void pick($, { kind: 'group', id: group.id }), isAdding)}
+          {small(`ungroup:${group.id}`, '풀기', () => void ungroup($, group.id))}
+        </Box>
+      )
+      return (
+        <Box key={`grp:${group.id}`} flexDirection="column" paddingRight="xs">
+          {picture(spacerPiece(1, GROUP_ROOM))}
+          <Box position="relative" flexDirection="column" borderStyle="round" borderColor={C.teal} backgroundColor={takes ? PICK_BG : undefined} paddingX="xs" paddingBottom="xs">
+            {label}
+            {grid(`grpgrid:${group.id}`, members, BADGE_ROOM.top)}
+          </Box>
+        </Box>
+      )
+    }
+
+    // The dormant islands, one chip each; a chip unfolds its island below the chips.
+    const coldChip = (island: IslandView) => {
+      const isOpen = unfolded.has(island.key)
+      return (
+        <Box key={`coldchip:${island.key}`} flexDirection="row" alignItems="center">
+          {framed(
+            `chip:${island.key}`,
+            { border: isOpen ? C.fg3 : C.line, fill: C.panel, outside: C.bg },
+            <Box flexDirection="row" alignItems="center">
+              <Button key={`fold:${island.key}`} plain dimColor={!isOpen} onPress={() => void toggleCold($, island.key)}>
+                <Text size="caption">{island.name}</Text>
+                <Text size="caption" dimColor>{` ${island.rows.length}`}</Text>
+              </Button>
+              {hasUnseen(island) && picture(newDotPiece())}
+            </Box>,
+          )}
+        </Box>
+      )
+    }
     const board = [
+      ...framedGroups.filter(one => one.rank === TIER_ORDER.hot).map(groupFrame),
       ...hot.map(island => (
         <Box key={`row:${island.key}`} flexDirection="row">
           {placed(island, BADGE_ROOM.top, true)}
         </Box>
       )),
+      ...framedGroups.filter(one => one.rank !== TIER_ORDER.hot).map(groupFrame),
       grid('active', active, BADGE_ROOM.top),
       cold.length > 0 && (
-        <Box key="divider" flexDirection="row" alignItems="center" gap="sm" paddingTop="xs" paddingRight="sm">
+        <Box key="divider" flexDirection="row" alignItems="center" gap="sm" paddingTop="sm" paddingRight="sm">
           <Box flexShrink={0}>
             <Text size="caption" color={C.fg3}>휴면 · 2시간 이상</Text>
           </Box>
           {dashed('line', C.line2)}
         </Box>
       ),
-      grid('cold', cold, CARD_GAP_COLD),
+      cold.length > 0 && (
+        <Box key="coldchips" flexDirection="row" flexWrap="wrap" gap="xs" paddingTop="xs" paddingRight="sm">
+          {cold.map(coldChip)}
+        </Box>
+      ),
+      grid('cold', cold.filter(island => unfolded.has(island.key)), CARD_GAP_COLD),
     ].filter(Boolean)
+    const pickTip =
+      picking &&
+      (picking.kind === 'group'
+        ? `'${groups.find(group => group.id === picking?.id)?.name ?? ''}'에 넣을 섬의 '넣기'를 누르세요`
+        : `'${picking.name}'와 묶을 섬의 '합치기'나 묶음의 '여기에 넣기'를 누르세요`)
 
     // The header's counts are the filters: one chosen at a time; a count of none cannot be chosen.
     const counts: Record<MonitorFilter, number> = {
@@ -981,6 +1116,11 @@ export function registerMonitor(on: On) {
           {ghost('popout', '창으로', () => void popOut($).then(text => $.ui.toast(text)))}
         </Box>
         <Box flexDirection="row">{solid('top', C.line)}</Box>
+        {pickTip && (
+          <Box paddingX="sm" paddingTop="xs">
+            <Text size="caption" color={C.teal}>{pickTip}</Text>
+          </Box>
+        )}
         {current.error && <Text color="error">목록을 못 읽음: {current.error}</Text>}
         <Box flexDirection="column" paddingLeft="sm" paddingBottom="sm">
           {empty ? (
@@ -998,7 +1138,9 @@ export function registerMonitor(on: On) {
         <Box flexDirection="row" flexWrap="wrap" columnGap="sm" paddingX="sm" paddingY="xs">
           {hint('제목 클릭', '세션 이동')}
           {hint('답 버튼', '그 세션에 보내기')}
-          {hint('휴면 카드 이름 클릭', '펼치기')}
+          {hint('묶기', '섬 묶기')}
+          {hint('묶음 이름', '바꾸기')}
+          {hint('휴면 칩', '펼치기')}
         </Box>
       </Box>
     )
@@ -1029,6 +1171,8 @@ function demoRows(at: number): MonitorRow[] {
     // Stopped, with only its watch running on.
     row(4, 'M2 검증형 경로 구현 (워커)', `${W}/inquiry`, 15, { parentId: id(3), state: 'background', tasks: [{ kind: 'monitor', label: 'tail -f eval.log', startedAt: ago(12) }] }),
     row(5, '국내 웹 탐색 실험 (네이버·보도자료·PDF/HWP)', `${W}/inquiry/.claude/worktrees/kr-web-sp`, 29, { parentId: id(3) }),
+    // Stopped workers enough to fold.
+    ...['정책 자료 수집', '보도자료 요약', '통계 표 정리', '인용 검증'].map((title, i) => row(21 + i, title, `${W}/inquiry`, 40 + i * 10, { parentId: id(3) })),
     row(6, 'Anthropic skills 재구성', `${W}/gudals`, 115),
     row(7, '강의 핸드아웃 작업 승계', `${W}/lecture-handout`, 166),
     row(8, 'LMS management (Sonnet)', `${H}/HYU/HY-LMS`, 173),

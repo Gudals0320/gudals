@@ -216,10 +216,12 @@ test('the board: islands by tier, answers inline, dormant islands folded, titles
   expect(await pictured('kr-web-spike')).toBe(true)
   // Every picture names itself: one with an empty alt is not drawn.
   expect((await ui.findAll({ type: 'Svg' })).every(one => String(one.props.alt).length > 0)).toBe(true)
-  // HY-LMS has been quiet for nearly three hours: below the line, folded into a mini chip.
+  // HY-LMS has been quiet for nearly three hours: below the line, one chip with its session count.
   expect(await text('휴면 · 2시간 이상')).toBe('휴면 · 2시간 이상')
-  expect((await ui.find({ key: 'fold:C:\\h\\HY-LMS' }))?.text).toBe('HY-LMS')
-  expect((await ui.find({ key: `open:${ID.lms}` }))?.text).toBe('LMS management')
+  expect((await ui.find({ key: 'fold:C:\\h\\HY-LMS' }))?.text).toBe('HY-LMS 1')
+  expect(await ui.find({ key: `open:${ID.lms}` })).toBe(undefined)
+  // A working session's activity sits on its title's line: no line of its own under it.
+  expect(await ui.find({ key: `act:${ID.vlsi}` })).toBe(undefined)
   expect((await ui.findAll({ type: 'Button', text: '열기' })).length).toBe(0)
 
   // An answer button sends what the button says, without leaving the radar, and the buttons give
@@ -237,6 +239,48 @@ test('the board: islands by tier, answers inline, dormant islands folded, titles
   expect(await ui.find({ key: `node:${ID.lms}` })).toBe(undefined)
   await $.ui.press({ plugin: 'gudals', key: 'fold:C:\\h\\HY-LMS' })
   expect((await ui.find({ key: `node:${ID.lms}` })) !== undefined).toBe(true)
+  await ui.unmount()
+})
+
+test('islands framed as a group: made by picking two, renamed, added to, left and undone', async ($, on) => {
+  stage(on, { running: true })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
+  const ui = await $.ui.mount(PANE)
+  const press = (key: string) => $.ui.press({ plugin: 'gudals', key })
+  const LEC = 'C:\\w\\lecture-artifact'
+  const INQ = 'C:\\w\\inquiry'
+
+  // 묶기 on one island, then 합치기 on another: a frame named after the first.
+  await press(`group:${LEC}`)
+  expect((await ui.find({ key: `group:${LEC}` }))?.text).toBe('취소')
+  expect((await ui.find({ key: `join:${INQ}` }))?.text).toBe('합치기')
+  await press(`join:${INQ}`)
+  const name = await ui.find({ type: 'Button', text: 'lecture-artifact 외' })
+  expect(name !== undefined).toBe(true)
+  const id = String(name?.key).replace(/^rename:/, '')
+  expect((await ui.find({ type: 'Text', text: '섬 2 · 세션 3' }))?.text).toBe('섬 2 · 세션 3')
+  // Inside, each island keeps its own card and can leave.
+  expect((await ui.find({ key: `leave:${LEC}` }))?.text).toBe('빼기')
+
+  // The name, edited where it stands.
+  await press(`rename:${id}`)
+  await ui.input({ key: `name:${id}`, text: 'VLSI 강의' })
+  expect((await ui.find({ key: `rename:${id}` }))?.text).toBe('VLSI 강의')
+
+  // + 추가, then 넣기 on an island outside.
+  const SCRATCH = '폴더 없음'
+  await press(`add:${id}`)
+  expect((await ui.find({ key: `join:${SCRATCH}` }))?.text).toBe('넣기')
+  await press(`join:${SCRATCH}`)
+  expect((await ui.find({ type: 'Text', text: /^섬 3 · / }))?.text).toBe('섬 3 · 세션 4')
+
+  // 빼기 takes one out; 풀기 undoes the frame.
+  await press(`leave:${SCRATCH}`)
+  expect((await ui.find({ type: 'Text', text: /^섬 2 · / }))?.text).toBe('섬 2 · 세션 3')
+  await press(`ungroup:${id}`)
+  expect(await ui.find({ key: `rename:${id}` })).toBe(undefined)
+  expect((await ui.find({ key: `group:${LEC}` }))?.text).toBe('묶기')
   await ui.unmount()
 })
 

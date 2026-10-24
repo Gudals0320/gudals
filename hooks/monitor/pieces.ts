@@ -176,6 +176,13 @@ export function gutterPiece(state: DotState, depth: number, gutter: Gutter = { t
   return svg(gutterWidth(depth), height, STATE_WORD[state], accent + verticals(gutter.through, height) + elbow + down + dot(state, dotX(depth), MID))
 }
 
+// The last line under a node's children, where folded ones are counted: the parent's line comes
+// down to it and turns in, with no dot.
+export function elbowPiece(depth: number, height: number, through: number[] = []): Piece {
+  const mid = height / 2
+  return svg(gutterWidth(depth), height, '트리 선', verticals(through, height) + dashed(`M${dotX(depth - 1)} 0 V${mid} H${dotX(depth) - 3}`))
+}
+
 // The gutter beside a node's question or activity lines: only the lines running past.
 export function railPiece(depth: number, height: number, through: number[] = []): Piece {
   return svg(gutterWidth(depth), height, '트리 선', verticals(through, height))
