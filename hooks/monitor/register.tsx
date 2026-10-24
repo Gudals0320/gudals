@@ -38,8 +38,10 @@ const MASONRY_GAIN_PX = 80
 // Dash tiles in a dashed line: enough for a pane 2000px wide.
 const DASH_TILES = 7
 const BOARD_PAD = 8
-// The room above a group's frame, for the label on its top edge; the tint of what can be picked.
-const GROUP_ROOM = 12
+// The room above a group's frame: the label that stands on its top edge (a row, about 20px) and a
+// gap under what is above it. The room inside it under its last card. The tint of what can be picked.
+const GROUP_ROOM = 30
+const GROUP_FOOT = 8
 const PICK_BG = '#1c2422'
 // How tall the desktop draws a plain button with a caption label.
 const BUTTON_PX = 20
@@ -1005,7 +1007,13 @@ export function registerMonitor(on: On) {
           {picture(spacerPiece(1, GROUP_ROOM))}
           <Box position="relative" flexDirection="column" borderStyle="round" borderColor={C.teal} backgroundColor={takes ? PICK_BG : undefined} paddingX="xs" paddingBottom="xs">
             {label}
-            {grid(`grpgrid:${group.id}`, members, BADGE_ROOM.top)}
+            {/* A group's islands stack, one to a row, each its full width. */}
+            {members.map(island => (
+              <Box key={`grprow:${island.key}`} flexDirection="row">
+                {placed(island, BADGE_ROOM.top, true)}
+              </Box>
+            ))}
+            {picture(spacerPiece(1, GROUP_FOOT))}
           </Box>
         </Box>
       )
