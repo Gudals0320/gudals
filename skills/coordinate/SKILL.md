@@ -37,7 +37,15 @@ disable-model-invocation: true
 | `deepseek` 등 ocx 라우팅 이름 | opencodex가 만든 `~/.claude/agents/ocx-*<이름>*.md`를 찾아 그 frontmatter의 `model` 값(예: `ocx-claude-deepseek--deepseek-flash`)을 쓴다. 파일이 없으면 멈추고 사용자에게 알린다: 그 라우팅이 opencodex 로스터에 없다 |
 | `ocx-…` / `claude-…` 전체 id | 그대로 쓴다 |
 
-모델을 세션에 넣는 순서: `start_session`의 `model` → 거부되면 띄운 뒤 `set_session_model` (앱 모델 선택기에 있는 id만 받는다. 거부 결과가 가능한 id 목록을 준다) → 그래도 안 되면 사용자에게 세션의 모델 메뉴에서 직접 고르라고 알리고, 그 전까지 작업을 시작시키지 않는다.
+**ocx 모델은 `start_session`의 `model`로 넣을 수 없다.** 인자는 거부 없이 무시되고 세션은 메인 모델로 뜬다 (2026-10-24 확인). `set_session_model`은 ocx id를 받고 **다음 턴부터** 적용된다. 그래서 첫 턴을 작업에 쓰지 않는다:
+
+1. `start_session`의 `model`에는 `haiku`를 주고, `prompt`는 `작업을 시작하지 말고 "BLOCKED: 모델 전환 대기"로 보고하고 턴을 끝내라.` 한 줄로 한다. 첫 턴이 한 요청으로 끝난다.
+2. 결과의 session_id로 `set_session_model`을 ocx id로 부른다. `state.md`의 세션 열에 id를 적는다.
+3. 그 세션에 `SendMessage`로 `.coord/tasks/<이름>.md 작업을 시작하라.`를 보낸다. 이 턴부터 ocx 모델이다.
+
+Claude 별칭(`opus`/`sonnet`/`haiku`)은 1단계의 `model`에 그대로 넘기고 2·3단계를 생략한다. 메인보다 비싼 별칭은 무시되므로, 그때만 2단계처럼 `set_session_model`로 올린다 (앱이 확인을 요청한다).
+
+실제 모델은 `~/.opencodex/usage.jsonl`의 `requestedModel`로 확인할 수 있다. ocx로 돌면 `deepseek/deepseek-flash`처럼 제공자 이름이 찍힌다.
 
 지정한 모델은 작업 파일의 `model:`에도 적는다. 훅이 그 값을 보고 라우팅된 모델에 맞는 안내(막힌 스킬, 이미지 입력 없음)를 하위 세션에 붙인다.
 
@@ -168,7 +176,7 @@ model: ocx-claude-deepseek--deepseek-flash
 작업마다 `start_session`을 한 번씩, 한 메시지에서 병렬로 호출한다. 먼저 `mark_chapter`로 묶음 제목을 단다.
 
 - `initiation: "user_asked"`, `context: "fresh"`, `use_worktree: true`
-- `model`: 옵션으로 받은 모델 (위 옵션 절). 없으면 생략한다
+- `model`: Claude 별칭이면 그대로. ocx 모델이면 `haiku`를 주고 옵션 절의 3단계 순서로 전환한다. 없으면 생략한다
 - `source_branch`: 작업 파일 커밋이 있는 현재 브랜치. 생략하면 기본 브랜치에서 갈라져 커밋이 빠진다.
 - `branch_name`: 반드시 `coord-<이름>`. 훅은 브랜치 이름에서 `coord-<이름>`을 찾아 `.coord/tasks/<이름>.md`와 짝짓는다. 다르면 훅이 켜지지 않는다.
 - `name`: `<이름>`
