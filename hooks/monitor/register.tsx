@@ -996,6 +996,38 @@ export function registerMonitor(on: On) {
         </Box>
       )
     }
+    // Groups and the islands outside them on one board: two columns, each block (a group or an
+    // island) under the shorter one, so a lone island fills the hole beside a short group instead of
+    // running the whole width. Narrow, the second column wraps under the first.
+    const groupHeight = (one: (typeof framedGroups)[number]) =>
+      GROUP_ROOM + GROUP_FOOT + one.members.reduce((sum, island) => sum + heightOf(island, BADGE_ROOM.top), 0)
+    const mixedColumns = (list: typeof framedGroups, loose: IslandView[]) => {
+      const blocks = [
+        ...list.map(one => ({ key: `g:${one.group.id}`, height: groupHeight(one), draw: () => groupFrame(one) })),
+        ...loose.map(island => ({ key: `i:${island.key}`, height: heightOf(island, BADGE_ROOM.top), draw: () => placed(island, BADGE_ROOM.top, true) })),
+      ]
+      if (blocks.length === 1) return <Box key="mixed" flexDirection="column">{blocks[0]!.draw()}</Box>
+      const columns: (typeof blocks)[] = [[], []]
+      const sums = [0, 0]
+      for (const block of blocks) {
+        const side = sums[1]! < sums[0]! ? 1 : 0
+        columns[side]!.push(block)
+        sums[side]! += block.height
+      }
+      return (
+        <Box key="mixed" flexDirection="row" flexWrap="wrap" alignItems="flex-start">
+          {columns.map((column, side) => (
+            <Box key={`mixed:col${side}`} flexDirection="column" width={CARD_MIN_CELLS} minWidth={0} flexGrow={1} flexShrink={1}>
+              {column.map(block => (
+                <Box key={block.key} flexDirection="row">
+                  {block.draw()}
+                </Box>
+              ))}
+            </Box>
+          ))}
+        </Box>
+      )
+    }
     const groupFrame = ({ group, members }: { group: MonitorGroup; members: IslandView[] }) => {
       const takes = picking?.kind === 'island'
       const isAdding = picking?.kind === 'group' && picking.id === group.id
@@ -1071,8 +1103,9 @@ export function registerMonitor(on: On) {
           {placed(island, BADGE_ROOM.top, true)}
         </Box>
       )),
-      groupColumns('groups', framedGroups.filter(one => one.rank !== TIER_ORDER.hot)),
-      grid('active', active, BADGE_ROOM.top),
+      ...(framedGroups.some(one => one.rank !== TIER_ORDER.hot)
+        ? [mixedColumns(framedGroups.filter(one => one.rank !== TIER_ORDER.hot), active)]
+        : [grid('active', active, BADGE_ROOM.top)]),
       cold.length > 0 && (
         <Box key="divider" flexDirection="row" alignItems="center" gap="sm" paddingTop="sm" paddingRight="sm">
           <Box flexShrink={0}>
