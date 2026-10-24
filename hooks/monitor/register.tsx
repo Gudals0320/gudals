@@ -1019,7 +1019,7 @@ export function registerMonitor(on: On) {
           {columns.map((column, side) => (
             <Box key={`mixed:col${side}`} flexDirection="column" width={CARD_MIN_CELLS} minWidth={0} flexGrow={1} flexShrink={1}>
               {column.map(block => (
-                <Box key={block.key} flexDirection="row">
+                <Box key={block.key} flexDirection="row" minWidth={0}>
                   {block.draw()}
                 </Box>
               ))}
@@ -1040,8 +1040,8 @@ export function registerMonitor(on: On) {
       // Offsets move a placed Box by whole rows, so the label gets a slot two rows tall starting a
       // row above the edge and sits in its middle: the edge runs through the label's centre.
       const label = (
-        <Box position="absolute" top={-1} left={2} height={2} flexDirection="row" alignItems="center">
-          <Box flexDirection="row" alignItems="center" gap="xs" paddingX="xs" backgroundColor={C.bg}>
+        <Box position="absolute" top={-1} left={2} right={2} height={2} flexDirection="row" alignItems="center">
+          <Box flexDirection="row" alignItems="center" gap="xs" paddingX="xs" flexShrink={1} minWidth={0} backgroundColor={C.bg}>
           {renaming === group.id ? (
             <>
               <Input key={`name:${group.id}`} value={group.name} submitLabel="저장" onSubmit={(value: string) => void rename($, group.id, value)} />
@@ -1052,7 +1052,10 @@ export function registerMonitor(on: On) {
               <Text size="caption" weight="semibold">{group.name}</Text>
             </Button>
           )}
-          <Text size="caption" color={C.fg3}>{`섬 ${members.length} · 세션 ${sessions}`}</Text>
+          {/* In a narrow frame the count gives way first; the name and the buttons stay whole. */}
+          <Box flexShrink={1} minWidth={0}>
+            <Text size="caption" color={C.fg3} wrap="truncate-end">{`섬 ${members.length} · 세션 ${sessions}`}</Text>
+          </Box>
           {takes
             ? small(`into:${group.id}`, '여기에 넣기', () => void join($, { kind: 'group', id: group.id }), true)
             : small(`add:${group.id}`, isAdding ? '취소' : '+ 추가', () => void pick($, { kind: 'group', id: group.id }), isAdding)}
@@ -1061,9 +1064,9 @@ export function registerMonitor(on: On) {
         </Box>
       )
       return (
-        <Box key={`grp:${group.id}`} flexDirection="column" paddingRight="xs">
+        <Box key={`grp:${group.id}`} flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} paddingRight="xs">
           {picture(spacerPiece(1, GROUP_ROOM))}
-          <Box position="relative" flexDirection="column" borderStyle="round" borderColor={C.teal} backgroundColor={takes ? PICK_BG : undefined} paddingX="xs" paddingBottom="xs">
+          <Box position="relative" flexDirection="column" minWidth={0} borderStyle="round" borderColor={C.teal} backgroundColor={takes ? PICK_BG : undefined} paddingX="xs" paddingBottom="xs">
             {label}
             {/* A group's islands stack in one column, top to bottom. */}
             {members.map(island => (
