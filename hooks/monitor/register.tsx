@@ -1011,8 +1011,11 @@ export function registerMonitor(on: On) {
           <Text size="caption">{label}</Text>
         </Button>
       )
+      // Offsets move a placed Box by whole rows, so the label gets a slot two rows tall starting a
+      // row above the edge and sits in its middle: the edge runs through the label's centre.
       const label = (
-        <Box position="absolute" top={-1} left={2} flexDirection="row" alignItems="center" gap="xs" paddingX="xs" backgroundColor={C.bg}>
+        <Box position="absolute" top={-1} left={2} height={2} flexDirection="row" alignItems="center">
+          <Box flexDirection="row" alignItems="center" gap="xs" paddingX="xs" backgroundColor={C.bg}>
           {renaming === group.id ? (
             <>
               <Input key={`name:${group.id}`} value={group.name} submitLabel="저장" onSubmit={(value: string) => void rename($, group.id, value)} />
@@ -1028,6 +1031,7 @@ export function registerMonitor(on: On) {
             ? small(`into:${group.id}`, '여기에 넣기', () => void join($, { kind: 'group', id: group.id }), true)
             : small(`add:${group.id}`, isAdding ? '취소' : '+ 추가', () => void pick($, { kind: 'group', id: group.id }), isAdding)}
           {small(`ungroup:${group.id}`, '풀기', () => void ungroup($, group.id))}
+          </Box>
         </Box>
       )
       return (
