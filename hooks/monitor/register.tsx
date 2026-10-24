@@ -967,6 +967,34 @@ export function registerMonitor(on: On) {
       )
     }
 
+    // A group's islands fill top to bottom: two columns where the pane is wide enough, each card
+    // under the shorter one, and one column where it is not (the second wraps under the first).
+    const stacked = (key: string, members: IslandView[], room: number) => {
+      if (members.length === 1) {
+        return (
+          <Box key={key} flexDirection="row">
+            {placed(members[0]!, room, true)}
+          </Box>
+        )
+      }
+      const columns: IslandView[][] = [[], []]
+      const sums = [0, 0]
+      for (const island of members) {
+        const side = sums[1]! < sums[0]! ? 1 : 0
+        columns[side]!.push(island)
+        sums[side]! += heightOf(island, room)
+      }
+      return (
+        <Box key={key} flexDirection="row" flexWrap="wrap" alignItems="flex-start">
+          {columns.map((column, side) => (
+            <Box key={`${key}:col${side}`} flexDirection="column" width={CARD_MIN_CELLS} minWidth={0} flexGrow={1} flexShrink={1}>
+              {column.map(island => placed(island, room, true))}
+            </Box>
+          ))}
+        </Box>
+      )
+    }
+
     // A group: one teal frame around its islands, each still its own card. Its name, its size and
     // what can be done with it sit on a label in the frame's top edge, so it costs no row of its own.
     const framedGroups = groups
@@ -1007,12 +1035,7 @@ export function registerMonitor(on: On) {
           {picture(spacerPiece(1, GROUP_ROOM))}
           <Box position="relative" flexDirection="column" borderStyle="round" borderColor={C.teal} backgroundColor={takes ? PICK_BG : undefined} paddingX="xs" paddingBottom="xs">
             {label}
-            {/* A group's islands stack, one to a row, each its full width. */}
-            {members.map(island => (
-              <Box key={`grprow:${island.key}`} flexDirection="row">
-                {placed(island, BADGE_ROOM.top, true)}
-              </Box>
-            ))}
+            {stacked(`grpcols:${group.id}`, members, BADGE_ROOM.top)}
             {picture(spacerPiece(1, GROUP_FOOT))}
           </Box>
         </Box>
