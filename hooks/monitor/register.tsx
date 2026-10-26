@@ -18,6 +18,9 @@ const SERVER = 'ccd_session_mgmt'
 // The board reads everything this often; the costly process table is read less (local.ts).
 const REFRESH_MS = 3_000
 const PROBE_LIMIT = 20
+// Every session the app lists, not the latest few: an older session belongs on the board too, as a
+// dormant chip. Only recent ones are read any further (PROBE_LIMIT, the 48-hour scan).
+const LIST_LIMIT = 500
 const OBSERVED_KEY = 'monitorObserved'
 const UNSEEN_KEY = 'monitorUnseen'
 const OPEN_COLD_KEY = 'monitorOpenCold'
@@ -160,7 +163,7 @@ async function probeOf($: Engine, id: string, lastActivityAt: number, isRunning:
 }
 
 async function readRows($: Engine, at: number): Promise<MonitorRow[]> {
-  const [listText, local] = await Promise.all([callText($, 'list_sessions', { limit: 50 }), readLocal($)])
+  const [listText, local] = await Promise.all([callText($, 'list_sessions', { limit: LIST_LIMIT }), readLocal($)])
   const list = JSON.parse(listText) as SessionJson[]
   const activityOf = (one: SessionJson) => (one.lastActivityAt ? Date.parse(one.lastActivityAt) : 0)
   // The engine's own busy flag, where this machine gives it, beats the app's.
