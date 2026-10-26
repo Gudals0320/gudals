@@ -434,6 +434,14 @@ async function saveDraft($: Engine, pressed: string) {
   if (row && held.value.trim() && held.value.trim() !== row.title) await sessionAction($, row, 'rename', held.value)
 }
 
+// The person's request behind each menu press, in plain words, for the permission check to read.
+const REQUEST: Record<'rename' | 'pin' | 'unpin' | 'archive', (title: string) => string> = {
+  rename: title => `Rename my session "${title}".`,
+  pin: title => `Pin my session "${title}" in the sidebar.`,
+  unpin: title => `Unpin my session "${title}" in the sidebar.`,
+  archive: title => `Archive my session "${title}".`,
+}
+
 // What the menu does to a session, through the app's own tools; the app may ask the person first.
 async function sessionAction($: Engine, row: MonitorRow, action: 'rename' | 'pin' | 'unpin' | 'archive', title?: string) {
   const call =
@@ -454,7 +462,8 @@ async function sessionAction($: Engine, row: MonitorRow, action: 'rename' | 'pin
     const result = await $.tool.call({
       tool: `mcp__${call[0]}__${call[1]}`,
       ...call[2],
-      consent: `The user pressed "${button}" for the session "${row.title}" in the Monitor pane.`,
+      // Said as the request it is: what to do, to which session, and the press that asked for it.
+      consent: `${REQUEST[action](row.title)} (The user pressed "${button}" in the Monitor pane's menu for that session.)`,
     })
     const failed = 'deny' in result && result.deny ? result.deny : 'isError' in result && result.isError ? String(result.text ?? '') : undefined
     if (failed) $.ui.toast(`${word}: ${short(failed, 160)}`)

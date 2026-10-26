@@ -167,7 +167,7 @@ function stage(on: On, vlsi: { running: boolean; events?: string; isAskClosed?: 
     if (!/^mcp__ccd_(session_mgmt|sidebar)__/.test(tool)) return { deny: `unexpected ${tool}` }
     const id = String(args.session_id)
     const name = tool.replace(/^mcp__[a-z_]+?__(?=[a-z_]+$)/, '').replace(/^ccd_(session_mgmt|sidebar)__/, '')
-    if (!String(args.consent ?? '').startsWith('The user pressed')) return { deny: 'no consent' }
+    if (!/^(Rename|Pin|Unpin|Archive) my session /.test(String(args.consent ?? ''))) return { deny: 'no consent' }
     if (name === 'set_session_title') world.titles.set(id, String(args.title))
     if (name === 'set_pinned') world.pinned.set(id, args.pinned === true)
     if (name === 'archive_session') world.archived.add(id)
