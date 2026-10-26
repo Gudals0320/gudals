@@ -103,6 +103,38 @@ export function describeBackground(tasks: BgTask[], at: number) {
 
 const PROC_MARKER = 'gudals-monitor-process-query'
 
+// Dev only: what one refresh spent, by kind: the app's own calls, the process query, transcript
+// scans. Calls run side by side, so each kind keeps its count, its total and its longest.
+type CostKind = 'app' | 'ps' | 'scan'
+const cost: Record<CostKind, { n: number; ms: number; max: number }> = {
+  app: { n: 0, ms: 0, max: 0 },
+  ps: { n: 0, ms: 0, max: 0 },
+  scan: { n: 0, ms: 0, max: 0 },
+}
+
+export function resetCost() {
+  for (const one of Object.values(cost)) Object.assign(one, { n: 0, ms: 0, max: 0 })
+}
+
+export async function timed<T>(kind: CostKind, run: () => Promise<T>): Promise<T> {
+  const began = Date.now()
+  try {
+    return await run()
+  } finally {
+    const ms = Date.now() - began
+    const one = cost[kind]
+    one.n += 1
+    one.ms += ms
+    one.max = Math.max(one.max, ms)
+  }
+}
+
+// "app 7×Σ310 max 120 · ps 1×1250 · scan 0", in milliseconds.
+export const costLine = () =>
+  (Object.entries(cost) as [CostKind, { n: number; ms: number; max: number }][])
+    .map(([kind, one]) => (one.n === 0 ? `${kind} 0` : one.n === 1 ? `${kind} 1×${one.ms}` : `${kind} ${one.n}×Σ${one.ms} max ${one.max}`))
+    .join(' · ')
+
 // The session processes and their children only, not the machine's whole process table: each one's
 // id, parent and name; the command line and start time for shells only. The ids are whole numbers.
 export const procQuery = (pids: number[]) =>
@@ -151,7 +183,7 @@ let procsInFlight: Promise<Proc[]> | undefined
 
 async function queryProcesses($: Engine, pids: number[]) {
   if (pids.length === 0) return []
-  const ran = await $.process.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', procQuery(pids)], { timeoutMs: 15_000 })
+  const ran = await timed('ps', () => $.process.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', procQuery(pids)], { timeoutMs: 15_000 }))
   if (ran.exitCode !== 0) throw new Error(ran.stderr.slice(0, 200))
   return ran.stdout.trim() ? parseProcesses(ran.stdout) : []
 }
@@ -266,7 +298,7 @@ export async function readChoice($: Engine, info: LocalInfo): Promise<Choice | B
 
 async function scanChoice($: Engine, path: string): Promise<Choice | Block | undefined> {
   try {
-    const ran = await $.process.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', choiceScript(path)], { timeoutMs: 20_000 })
+    const ran = await timed('scan', () => $.process.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', choiceScript(path)], { timeoutMs: 20_000 }))
     const line = ran.exitCode === 0 ? ran.stdout.trim() : ''
     return line ? (blockOf(line) ?? choiceOf(line)) : undefined
   } catch {

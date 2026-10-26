@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { describeBackground, innerCommand, parseProcesses, parseRegistry, procQuery, taskOf, tasksUnder } from '../hooks/monitor/local'
+import { costLine, describeBackground, innerCommand, parseProcesses, parseRegistry, procQuery, resetCost, taskOf, tasksUnder, timed } from '../hooks/monitor/local'
 
 const MIN = 60_000
 const NOW = Date.UTC(2026, 9, 22, 12, 40)
@@ -66,4 +66,16 @@ test('procQuery asks for the session processes and their children only', () => {
   const script = procQuery([12, 345])
   expect(script).toContain('-Filter "ProcessId=12 OR ParentProcessId=12 OR ProcessId=345 OR ParentProcessId=345"')
   expect(script.includes('Get-CimInstance Win32_Process |')).toBe(false)
+})
+
+test('a refresh keeps what each kind of call cost: count, total and longest', async () => {
+  resetCost()
+  expect(costLine()).toBe('app 0 · ps 0 · scan 0')
+  await timed('app', async () => 1)
+  await timed('app', async () => 2)
+  await timed('ps', async () => 3)
+  expect(costLine()).toMatch(/^app 2×Σ\d+ max \d+ · ps 1×\d+ · scan 0$/)
+  // A call that fails is counted too.
+  await timed('scan', async () => { throw new Error('x') }).catch(() => undefined)
+  expect(costLine()).toMatch(/scan 1×\d+$/)
 })

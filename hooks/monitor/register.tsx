@@ -3,7 +3,7 @@ import type { EngineInterface as Engine, On } from 'claude-code'
 
 import type { MonitorFilter, MonitorFlash, MonitorGroup, MonitorObserved, MonitorPick, MonitorProbe, MonitorRow, MonitorState, MonitorView } from '../../types'
 import { MIN, classify, describeActivity, newChatLink, parseEvents, sessionLink } from './classify'
-import { describeBackground, readChoice, readLocal } from './local'
+import { costLine, describeBackground, readChoice, readLocal, resetCost, timed } from './local'
 import type { Block, Choice } from './local'
 import { C, NODE_PX, badgePiece, pinPiece, cardCornerPiece, cardSidePiece, dashTilePiece, dotPiece, elbowPiece, frameLineSource, frameSide, glintPiece, gutterPiece, newDotPiece, pillPiece, railPiece, spacerPiece, worktreePiece } from './pieces'
 import type { DotState, Frame, Piece } from './pieces'
@@ -146,7 +146,7 @@ function age(at: number, since: number | null) {
 }
 
 async function callText($: Engine, tool: string, args: Record<string, unknown>) {
-  const result = await $.mcp.call(SERVER, tool, args)
+  const result = await timed('app', () => $.mcp.call(SERVER, tool, args))
   const text = result.content.map((block: { type: string; text?: unknown }) => ('text' in block ? String(block.text) : '')).join('')
   if (result.isError) throw new Error(text.slice(0, 200))
   return text
@@ -362,10 +362,11 @@ function refresh($: Engine, cause = 'timer') {
 async function readAndPublish($: Engine, cause: string) {
   const at = await $.clock.now()
   const began = Date.now()
+  resetCost()
   try {
     await readAndPublishAt($, at)
   } finally {
-    void noteRefresh($, at, `${cause} ${Date.now() - began}ms`)
+    void noteRefresh($, at, `${cause} ${Date.now() - began}ms · ${costLine()}`)
   }
 }
 
