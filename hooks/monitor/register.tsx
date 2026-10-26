@@ -312,8 +312,16 @@ async function publish($: Engine, at: number, rows: MonitorRow[], error?: string
   if (renamingSession) next.renamingSession = renamingSession
   if (forcedWidth) next.forcedWidth = forcedWidth
   if (error) next.error = error
+  // A write redraws the board, and a redraw starts its animations over. So a refresh that changes
+  // nothing on screen writes nothing: ages read in whole minutes, so the time counts by the minute.
+  const shown = JSON.stringify({ ...next, at: Math.floor(at / MIN) })
+  if (shown === lastShown) return
+  lastShown = shown
   await update($, view, () => next)
 }
+
+// What the board last drew, to tell a refresh that changes something from one that does not.
+let lastShown: string | undefined
 
 // Closes a waiting session's question on the board: it stays closed until the session asks again.
 async function dismiss($: Engine, row: MonitorRow) {
