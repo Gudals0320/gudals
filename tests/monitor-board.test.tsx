@@ -132,6 +132,7 @@ function stage(on: On, vlsi: { running: boolean; events?: string; isAskClosed?: 
   mock.store(on)
   const sent: { session: string; message: string }[] = []
   const opened: string[] = []
+  const world = { titles: new Map<string, string>(), pinned: new Map<string, boolean>(), archived: new Set<string>(), calls: [] as string[] }
   on('command.register', () => ({ value: { command: 'monitor' } }))
   on('tool.register', () => ({ value: { tool: 'mcp__gudals__monitor_snapshot' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
@@ -164,6 +165,15 @@ function stage(on: On, vlsi: { running: boolean; events?: string; isAskClosed?: 
       sent.push({ session: String(e.args?.session_id), message: String(e.args?.message) })
       return { value: { content: [{ type: 'text', text: 'delivered' }], isError: false } }
     }
+    // What the session menu asks of the app: renamed, pinned and archived sessions.
+    if (e.tool === 'set_session_title' || e.tool === 'set_pinned' || e.tool === 'archive_session') {
+      const id = String(e.args?.session_id)
+      if (e.tool === 'set_session_title') world.titles.set(id, String(e.args?.title))
+      if (e.tool === 'set_pinned') world.pinned.set(id, e.args?.pinned === true)
+      if (e.tool === 'archive_session') world.archived.add(id)
+      world.calls.push(`${e.tool}:${id}`)
+      return { value: { content: [{ type: 'text', text: 'ok' }], isError: false } }
+    }
     const iso = (min: number) => new Date(NOW - min * MIN).toISOString()
     const sessions = [
       { sessionId: ID.ask, title: 'Gudals transprompt', cwd: 'C:\\d\\scratch-2026-10-22-77f361', isRunning: false, lastActivityAt: iso(2) },
@@ -173,14 +183,51 @@ function stage(on: On, vlsi: { running: boolean; events?: string; isAskClosed?: 
       { sessionId: ID.lms, title: 'LMS management', cwd: 'C:\\h\\HY-LMS', isRunning: false, lastActivityAt: iso(173) },
     ]
     const isVlsi = e.args?.session_id === ID.vlsi
+    const listed = sessions
+      .filter(one => !world.archived.has(one.sessionId))
+      .map(one => ({ ...one, title: world.titles.get(one.sessionId) ?? one.title, pinned: world.pinned.get(one.sessionId) ?? false }))
     const text =
       e.tool === 'list_sessions'
-        ? JSON.stringify(sessions)
+        ? JSON.stringify(listed)
         : `Session "s" (${isVlsi && vlsi.running ? 'running' : 'idle'}) — showing 1 of 1 messages\n\n${(isVlsi && vlsi.events) || '[assistant] 파일을 읽는 중입니다.'}`
     return { value: { content: [{ type: 'text', text }], isError: false } }
   })
-  return { sent, opened, clock }
+  return { sent, opened, clock, world }
 }
+
+test('a session menu renames, pins and archives through the app, and never deletes', async ($, on) => {
+  const { world } = stage(on, { running: true })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
+  const ui = await $.ui.mount(PANE)
+  const press = (key: string) => $.ui.press({ plugin: 'gudals', key })
+
+  // ⋯ opens the menu under the row: rename, pin, archive and close; no delete.
+  expect(await ui.find({ key: `do-rename:${ID.parent}` })).toBe(undefined)
+  await press(`menu:${ID.parent}`)
+  expect((await ui.find({ key: `do-rename:${ID.parent}` }))?.text).toBe('이름 변경')
+  expect((await ui.find({ key: `do-pin:${ID.parent}` }))?.text).toBe('고정')
+  expect((await ui.find({ key: `do-archive:${ID.parent}` }))?.text).toBe('보관')
+  expect((await ui.findAll({ type: 'Button', text: /삭제/ })).length).toBe(0)
+
+  // Rename where it stands.
+  await press(`do-rename:${ID.parent}`)
+  await ui.input({ key: `title:${ID.parent}`, text: 'AI 협업 (정리)' })
+  expect((await ui.find({ key: `open:${ID.parent}` }))?.text).toBe('AI 협업 (정리)')
+  expect(await ui.find({ key: `do-rename:${ID.parent}` })).toBe(undefined)
+
+  // Pin, and the menu offers to unpin.
+  await press(`menu:${ID.parent}`)
+  await press(`do-pin:${ID.parent}`)
+  await press(`menu:${ID.parent}`)
+  expect((await ui.find({ key: `do-pin:${ID.parent}` }))?.text).toBe('고정 해제')
+
+  // Archive: the session leaves the board.
+  await press(`do-archive:${ID.parent}`)
+  expect(await ui.find({ key: `open:${ID.parent}` })).toBe(undefined)
+  expect(world.calls).toEqual([`set_session_title:${ID.parent}`, `set_pinned:${ID.parent}`, `archive_session:${ID.parent}`])
+  await ui.unmount()
+})
 
 test('the board: islands by tier, answers inline, dormant islands folded, titles open sessions', async ($, on) => {
   const { sent, opened } = stage(on, { running: true })

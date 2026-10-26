@@ -31,6 +31,8 @@ export type MonitorRow = {
   title: string
   cwd: string
   parentId?: string
+  // Pinned in the app's sidebar.
+  pinned?: boolean
   isRunning: boolean
   lastActivityAt: number
   state: MonitorState
@@ -77,6 +79,9 @@ export type MonitorView = {
   picking?: MonitorPick
   // The group whose name is being edited.
   renaming?: string
+  // The session whose menu is open, and the session being renamed from it.
+  menu?: string
+  renamingSession?: string
   filter?: MonitorFilter
   // Answers sent from the board to sessions still on that question: the button's label, by session.
   sent?: Record<string, string>

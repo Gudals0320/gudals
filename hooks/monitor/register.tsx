@@ -63,6 +63,7 @@ type SessionJson = {
   startedBy?: string
   isRunning?: boolean
   lastActivityAt?: string
+  pinned?: boolean
 }
 
 // A session whose last activity has not moved keeps the probe taken at that activity.
@@ -78,6 +79,9 @@ let groups: MonitorGroup[] = []
 // While grouping: what is looking for a partner. Editing: the group being renamed.
 let picking: MonitorPick | undefined
 let renaming: string | undefined
+// The session whose menu is open, and the session being renamed from it.
+let menuFor: string | undefined
+let renamingSession: string | undefined
 const flashes = new Map<string, { kind: MonitorFlash; until: number }>()
 // Dev only: sample rows that show every part of the board, for checking the layout.
 let isDemo = false
@@ -225,6 +229,7 @@ async function readRows($: Engine, at: number): Promise<MonitorRow[]> {
       warnings: verdict.warning ? [verdict.warning] : [],
     }
     if (one.startedBy) row.parentId = one.startedBy
+    if (one.pinned) row.pinned = true
     if (verdict.waitKind) row.waitKind = verdict.waitKind
     if (verdict.waitText) row.waitText = verdict.waitText
     if (choice?.options.length && verdict.waitKind === 'choice') {
@@ -298,6 +303,8 @@ async function publish($: Engine, at: number, rows: MonitorRow[], error?: string
   }
   if (picking) next.picking = picking
   if (renaming) next.renaming = renaming
+  if (menuFor) next.menu = menuFor
+  if (renamingSession) next.renamingSession = renamingSession
   if (forcedWidth) next.forcedWidth = forcedWidth
   if (error) next.error = error
   await update($, view, () => next)
@@ -392,6 +399,42 @@ async function toggleCold($: Engine, key: string) {
   else openCold.add(key)
   await $.store.set(OPEN_COLD_KEY, [...openCold])
   await settleFlash($)
+}
+
+// One session's menu at a time; the same one again closes it.
+async function toggleMenu($: Engine, id: string) {
+  menuFor = menuFor === id ? undefined : id
+  renamingSession = undefined
+  await settleFlash($)
+}
+
+async function startSessionRename($: Engine, id?: string) {
+  renamingSession = id
+  await settleFlash($)
+}
+
+// What the menu does to a session, through the app's own tools; the app may ask the person first.
+async function sessionAction($: Engine, row: MonitorRow, action: 'rename' | 'pin' | 'unpin' | 'archive', title?: string) {
+  const call =
+    action === 'rename'
+      ? title?.trim() ? (['ccd_session_mgmt', 'set_session_title', { session_id: row.id, title: title.trim().slice(0, 120) }] as const) : undefined
+      : action === 'archive'
+        ? (['ccd_session_mgmt', 'archive_session', { session_id: row.id, reason: 'Monitor에서 보관' }] as const)
+        : (['ccd_sidebar', 'set_pinned', { session_id: row.id, pinned: action === 'pin' }] as const)
+  menuFor = undefined
+  renamingSession = undefined
+  if (!call) return settleFlash($)
+  const word = { rename: '이름을 못 바꿈', pin: '고정 못 함', unpin: '고정을 못 풂', archive: '보관 못 함' }[action]
+  try {
+    const result = await $.mcp.call(call[0], call[1], call[2])
+    if (result.isError) {
+      const text = result.content.map((block: { type: string; text?: unknown }) => ('text' in block ? String(block.text) : '')).join('')
+      $.ui.toast(`${word}: ${short(text, 80)}`)
+    }
+  } catch (err) {
+    $.ui.toast(`${word}: ${short(String(err), 80)}`)
+  }
+  await refresh($, 'menu')
 }
 
 async function toggleFold($: Engine, id: string) {
@@ -674,6 +717,38 @@ export function registerMonitor(on: On) {
     }
     const waiting = rows.filter(row => row.state === 'waiting').sort((a, b) => timeOf(a) - timeOf(b))
 
+    // A session's menu, on a line under its node: rename it there, pin or unpin it, archive it.
+    // Deleting is left to the app's own sidebar; forking another session is not something the app
+    // lets a session do.
+    const sessionMenu = (row: MonitorRow, depth: number, under: number[]) => {
+      const item = (key: string, label: string, onPress: () => void) => (
+        <Button key={key} plain dimColor onPress={onPress}>
+          <Text size="caption">{label}</Text>
+        </Button>
+      )
+      return (
+        <Box key={`menurow:${row.id}`} flexDirection="row" alignItems="center" gap="sm">
+          {picture(railPiece(depth, 24, under))}
+          {current.renamingSession === row.id ? (
+            <>
+              <Box flexGrow={1} flexShrink={1} minWidth={0}>
+                <Input key={`title:${row.id}`} value={row.title} submitLabel="저장" onSubmit={(value: string) => void sessionAction($, row, 'rename', value)} />
+              </Box>
+              {item(`title-cancel:${row.id}`, '취소', () => void startSessionRename($))}
+            </>
+          ) : (
+            <>
+              {item(`do-rename:${row.id}`, '이름 변경', () => void startSessionRename($, row.id))}
+              {item(`do-pin:${row.id}`, row.pinned ? '고정 해제' : '고정', () => void sessionAction($, row, row.pinned ? 'unpin' : 'pin'))}
+              {item(`do-archive:${row.id}`, '보관', () => void sessionAction($, row, 'archive'))}
+              <Box flexGrow={1} />
+              {item(`menu-close:${row.id}`, '닫기', () => void toggleMenu($, row.id))}
+            </>
+          )}
+        </Box>
+      )
+    }
+
     // One session's rows: the node, what it asks, its shells, then its children. A working
     // session's activity sits on its own line, after the title; the sweep is the island's.
     // `through` names the depths whose child line runs on past these rows.
@@ -713,8 +788,15 @@ export function registerMonitor(on: On) {
           <Box flexShrink={0} paddingRight="xs">
             <Text size="caption" mono color={C.fg3}>{age(at, row.since)}</Text>
           </Box>
+          {/* The session's menu: shown under the pointer, and kept while it is open. */}
+          <Box flexShrink={0} display={current.menu === row.id ? 'flex' : 'none'} hover={current.menu === row.id ? undefined : { display: 'flex' }}>
+            <Button key={`menu:${row.id}`} plain dimColor onPress={() => void toggleMenu($, row.id)}>
+              <Text size="caption">⋯</Text>
+            </Button>
+          </Box>
         </Box>,
       ]
+      if (current.menu === row.id) lines.push(sessionMenu(row, depth, under))
       if (row.state === 'waiting') {
         lines.push(
           <Box key={`q:${row.id}`} flexDirection="row" alignItems="center">
