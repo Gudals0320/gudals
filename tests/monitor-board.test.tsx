@@ -160,19 +160,24 @@ function stage(on: On, vlsi: { running: boolean; events?: string; isAskClosed?: 
         ])
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
+  // The session menu's calls arrive as tool calls carrying the person's press as consent.
+  on('tool.call', (_, e) => {
+    const tool = String(e.tool)
+    const args = e as unknown as Record<string, unknown>
+    if (!/^mcp__ccd_(session_mgmt|sidebar)__/.test(tool)) return { deny: `unexpected ${tool}` }
+    const id = String(args.session_id)
+    const name = tool.replace(/^mcp__[a-z_]+?__(?=[a-z_]+$)/, '').replace(/^ccd_(session_mgmt|sidebar)__/, '')
+    if (!String(args.consent ?? '').startsWith('The user pressed')) return { deny: 'no consent' }
+    if (name === 'set_session_title') world.titles.set(id, String(args.title))
+    if (name === 'set_pinned') world.pinned.set(id, args.pinned === true)
+    if (name === 'archive_session') world.archived.add(id)
+    world.calls.push(`${name}:${id}`)
+    return { result: 'ok' }
+  })
   on('mcp.call', (_, e) => {
     if (e.tool === 'send_message') {
       sent.push({ session: String(e.args?.session_id), message: String(e.args?.message) })
       return { value: { content: [{ type: 'text', text: 'delivered' }], isError: false } }
-    }
-    // What the session menu asks of the app: renamed, pinned and archived sessions.
-    if (e.tool === 'set_session_title' || e.tool === 'set_pinned' || e.tool === 'archive_session') {
-      const id = String(e.args?.session_id)
-      if (e.tool === 'set_session_title') world.titles.set(id, String(e.args?.title))
-      if (e.tool === 'set_pinned') world.pinned.set(id, e.args?.pinned === true)
-      if (e.tool === 'archive_session') world.archived.add(id)
-      world.calls.push(`${e.tool}:${id}`)
-      return { value: { content: [{ type: 'text', text: 'ok' }], isError: false } }
     }
     const iso = (min: number) => new Date(NOW - min * MIN).toISOString()
     const sessions = [

@@ -447,14 +447,19 @@ async function sessionAction($: Engine, row: MonitorRow, action: 'rename' | 'pin
   draft = undefined
   if (!call) return settleFlash($)
   const word = { rename: '이름을 못 바꿈', pin: '고정 못 함', unpin: '고정을 못 풂', archive: '보관 못 함' }[action]
+  const button = { rename: '이름 변경', pin: '고정', unpin: '고정 해제', archive: '보관' }[action]
+  // Through the session's own tool path, as the person's press: the app takes a change to another
+  // session only as their request, and may still ask them to confirm it.
   try {
-    const result = await $.mcp.call(call[0], call[1], call[2])
-    if (result.isError) {
-      const text = result.content.map((block: { type: string; text?: unknown }) => ('text' in block ? String(block.text) : '')).join('')
-      $.ui.toast(`${word}: ${short(text, 80)}`)
-    }
+    const result = await $.tool.call({
+      tool: `mcp__${call[0]}__${call[1]}`,
+      ...call[2],
+      consent: `The user pressed "${button}" for the session "${row.title}" in the Monitor pane.`,
+    })
+    const failed = 'deny' in result && result.deny ? result.deny : 'isError' in result && result.isError ? String(result.text ?? '') : undefined
+    if (failed) $.ui.toast(`${word}: ${short(failed, 160)}`)
   } catch (err) {
-    $.ui.toast(`${word}: ${short(String(err), 80)}`)
+    $.ui.toast(`${word}: ${short(String(err), 160)}`)
   }
   await refresh($, 'menu')
 }
@@ -759,21 +764,22 @@ export function registerMonitor(on: On) {
       return (
         <Box key={`menurow:${row.id}`} flexDirection="row" alignItems="center" gap="sm">
           {picture(railPiece(depth, 24, under))}
+          {/* A fragment stacks its children on the desktop, so each set is a row of its own. */}
           {current.renamingSession === row.id ? (
-            <>
+            <Box flexDirection="row" alignItems="center" gap="sm" flexGrow={1} minWidth={0}>
               <Box flexGrow={1} flexShrink={1} minWidth={0}>
                 <Input key={`title:${row.id}`} value={draft?.key === `title:${row.id}` ? draft.value : row.title} submitLabel="저장" onInput={(value: string) => keepDraft(`title:${row.id}`, value)} onSubmit={(value: string) => void sessionAction($, row, 'rename', value)} />
               </Box>
               {item(`title-cancel:${row.id}`, '취소', () => void startSessionRename($))}
-            </>
+            </Box>
           ) : (
-            <>
+            <Box flexDirection="row" alignItems="center" gap="sm" flexGrow={1} minWidth={0}>
               {item(`do-rename:${row.id}`, '이름 변경', () => void startSessionRename($, row.id))}
               {item(`do-pin:${row.id}`, row.pinned ? '고정 해제' : '고정', () => void sessionAction($, row, row.pinned ? 'unpin' : 'pin'))}
               {item(`do-archive:${row.id}`, '보관', () => void sessionAction($, row, 'archive'))}
               <Box flexGrow={1} />
               {item(`menu-close:${row.id}`, '닫기', () => void toggleMenu($, row.id))}
-            </>
+            </Box>
           )}
         </Box>
       )
@@ -1177,10 +1183,10 @@ export function registerMonitor(on: On) {
         <Box position="absolute" top={-1} left={2} right={2} height={2} flexDirection="row" alignItems="center">
           <Box flexDirection="row" alignItems="center" gap="xs" paddingX="xs" flexShrink={1} minWidth={0} backgroundColor={C.bg}>
           {renaming === group.id ? (
-            <>
+            <Box flexDirection="row" alignItems="center" gap="xs">
               <Input key={`name:${group.id}`} value={draft?.key === `name:${group.id}` ? draft.value : group.name} submitLabel="저장" onInput={(value: string) => keepDraft(`name:${group.id}`, value)} onSubmit={(value: string) => void rename($, group.id, value)} />
               {small(`rename-cancel:${group.id}`, '취소', () => void startRename($))}
-            </>
+            </Box>
           ) : (
             <Button key={`rename:${group.id}`} plain onPress={() => void startRename($, group.id)}>
               <Text size="caption" weight="semibold">{group.name}</Text>
