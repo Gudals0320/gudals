@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { asksSomething, classify, describeActivity, firstLine, parseEvents, sessionLink, toolLabel } from '../hooks/monitor/classify'
+import { asksSomething, classify, describeActivity, firstLine, newChatLink, parseEvents, sessionLink, toolLabel } from '../hooks/monitor/classify'
 import { escapeHtml, lineCount } from '../hooks/monitor/pieces'
 
 const MIN = 60_000
@@ -105,4 +105,11 @@ test('sessionLink passes only a well-formed local id', () => {
   expect(sessionLink(ID.ask)).toBe(`claude://claude.ai/epitaxy/${ID.ask}`)
   expect(sessionLink('local_x" & calc')).toBe(undefined)
   expect(sessionLink(`${ID.ask}&calc`)).toBe(undefined)
+})
+
+test('newChatLink takes an absolute Windows folder, encoded whole', () => {
+  expect(newChatLink('C:\\Workspace\\gudals')).toBe('claude://code/new?folder=C%3A%5CWorkspace%5Cgudals')
+  expect(newChatLink('C:\\a & calc')).toBe('claude://code/new?folder=C%3A%5Ca%20%26%20calc')
+  expect(newChatLink('relative\\path')).toBe(undefined)
+  expect(newChatLink('폴더 없음')).toBe(undefined)
 })

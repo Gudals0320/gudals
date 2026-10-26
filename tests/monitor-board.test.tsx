@@ -87,6 +87,8 @@ test('pictures: the gutter draws a child behind the dashed teal rail, and dots m
   expect(child.svg).toContain('<animate attributeName="opacity"')
   expect(gutterPiece('waiting', 0).svg).toContain('<animate attributeName="r"')
   expect(glintPiece().svg).toContain('<animate attributeName="x"')
+  // Tile 2 of 4 carries the glint in the second quarter of the cycle.
+  expect(glintPiece(1, 4).svg).toContain('keyTimes="0;0.2500;0.5000;1"')
   // A dash tile holds whole dashes, so tiles side by side read as one line.
   expect(DASH_TILE_PX % 7).toBe(0)
   expect(dashTilePiece('#fff').svg).toContain('stroke-dasharray="4 3"')
@@ -285,7 +287,8 @@ test('the board: islands by tier, answers inline, dormant islands folded, titles
   expect(await text('20분째')).toBe('20분째')
   expect(await text('백그라운드 1')).toBe('백그라운드 1')
   expect(await pictured('백그라운드')).toBe(true)
-  expect((await ui.findAll({ type: 'Svg' })).filter(one => String(one.props.alt) === '진행 중').length).toBe(1)
+  // One working island (lecture-artifact) carries the glint, in its row of tiles; background does not.
+  expect((await ui.findAll({ type: 'Svg' })).filter(one => String(one.props.alt) === '진행 중').length).toBe(4)
   expect(await pictured('kr-web-spike')).toBe(true)
   // Every picture names itself: one with an empty alt is not drawn.
   expect((await ui.findAll({ type: 'Svg' })).every(one => String(one.props.alt).length > 0)).toBe(true)
@@ -307,6 +310,11 @@ test('the board: islands by tier, answers inline, dormant islands folded, titles
 
   await $.ui.press({ plugin: 'gudals', key: `open:${ID.spike}` })
   expect(opened.at(-1)).toBe(`claude://claude.ai/epitaxy/${ID.spike}`)
+
+  // + beside an island's name opens the new-chat screen in its folder; the folder-less island has none.
+  await $.ui.press({ plugin: 'gudals', key: 'new:C:\\w\\inquiry' })
+  expect(opened.at(-1)).toBe(`claude://code/new?folder=${encodeURIComponent('C:\\w\\inquiry')}`)
+  expect(await ui.find({ key: 'new:폴더 없음' })).toBe(undefined)
 
   // Unfolding a dormant island shows its tree.
   expect(await ui.find({ key: `node:${ID.lms}` })).toBe(undefined)

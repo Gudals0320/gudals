@@ -204,15 +204,24 @@ export function dashTilePiece(color: string): Piece {
 }
 
 // The glint that sweeps along a working node's progress line every 1.8s; the line itself is a box.
-export function glintPiece(): Piece {
+// A picture draws no wider than 300px without a width, so the glint runs over a row of tiles, each
+// taking its turn: tile `index` of `count` carries it across during its share of the cycle, so the
+// tiles side by side read as one glint going the whole way. Tiles past the card's edge are clipped.
+export const GLINT_TILE_PX = 300
+const GLINT_TILE_S = 0.9
+
+export function glintPiece(index = 0, count = 1): Piece {
+  const from = (index / count).toFixed(4)
+  const to = ((index + 1) / count).toFixed(4)
   return svg(
-    300,
+    GLINT_TILE_PX,
     2,
     '진행 중',
     `<defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="${C.green}" stop-opacity="0"/>` +
       `<stop offset="0.5" stop-color="${C.green}"/><stop offset="1" stop-color="${C.green}" stop-opacity="0"/></linearGradient></defs>` +
-      `<rect y="0" width="120" height="2" rx="1" fill="url(#g)">` +
-      `<animate attributeName="x" values="-120;300" dur="1.8s" repeatCount="indefinite"/></rect>`,
+      `<rect y="0" x="-120" width="120" height="2" rx="1" fill="url(#g)">` +
+      `<animate attributeName="x" values="-120;-120;${GLINT_TILE_PX};${GLINT_TILE_PX}" keyTimes="0;${from};${to};1" ` +
+      `dur="${(GLINT_TILE_S * count).toFixed(2)}s" repeatCount="indefinite"/></rect>`,
   )
 }
 

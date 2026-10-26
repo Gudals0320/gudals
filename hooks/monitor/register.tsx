@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface as Engine, On } from 'claude-code'
 
 import type { MonitorFilter, MonitorFlash, MonitorGroup, MonitorObserved, MonitorPick, MonitorProbe, MonitorRow, MonitorState, MonitorView } from '../../types'
-import { MIN, classify, describeActivity, parseEvents, sessionLink } from './classify'
+import { MIN, classify, describeActivity, newChatLink, parseEvents, sessionLink } from './classify'
 import { describeBackground, readChoice, readLocal } from './local'
 import type { Block, Choice } from './local'
 import { C, NODE_PX, badgePiece, pinPiece, cardCornerPiece, cardSidePiece, dashTilePiece, dotPiece, elbowPiece, frameLineSource, frameSide, glintPiece, gutterPiece, newDotPiece, pillPiece, railPiece, spacerPiece, worktreePiece } from './pieces'
@@ -39,6 +39,8 @@ const MASONRY_GAIN_PX = 80
 const COLUMN_GAP = 1
 // The share of a line a working session's title may take, so its activity stays in view.
 const TITLE_SHARE = '40%'
+// Glint tiles along a working island's line: enough for a card about 1200px wide.
+const GLINT_TILES = 4
 // Dash tiles in a dashed line: enough for a pane 2000px wide.
 const DASH_TILES = 7
 const BOARD_PAD = 8
@@ -538,6 +540,19 @@ async function openSession($: Engine, id: string) {
   }
 }
 
+// Opens the app's new-chat screen with an island's folder already chosen. Nothing starts until
+// the person writes; the app may first ask whether to trust a folder opened this way.
+async function openNewChat($: Engine, folder: string) {
+  const link = newChatLink(folder)
+  if (!link) return
+  try {
+    const ran = await $.process.run(['cmd.exe', '/c', 'start', '', link], { timeoutMs: 10_000 })
+    if (ran.exitCode !== 0) $.ui.toast(`새 채팅을 못 엶: ${short(ran.stderr.trim(), 80)}`)
+  } catch (err) {
+    $.ui.toast(`새 채팅을 못 엶: ${short(String(err), 80)}`)
+  }
+}
+
 // Answers a waiting session from the board: sends what its button says. The session receives it
 // as a message from this session, labelled with this session's title, so a session that asked
 // the person to decide may still ask them to confirm in it.
@@ -958,6 +973,11 @@ export function registerMonitor(on: On) {
           ) : (
             <Text size="footnote" weight="semibold" color={isFolderless ? C.fg2 : undefined} wrap="truncate-end">{island.name}</Text>
           )}
+          {!isFolderless && (
+            <Button key={`new:${island.key}`} plain dimColor onPress={() => void openNewChat($, island.key)}>
+              <Text size="caption">+</Text>
+            </Button>
+          )}
           <Box flexGrow={1} flexShrink={1} minWidth={0}>
             <Text size="caption" color={whyColor} wrap="truncate-end">{isCold ? '' : island.why}</Text>
           </Box>
@@ -975,7 +995,11 @@ export function registerMonitor(on: On) {
             {isWorking ? (
               <Box position="relative" flexDirection="row">
                 {picture(spacerPiece(1, 6))}
-                <Box position="absolute" top={0} left={0}>{picture(glintPiece())}</Box>
+                <Box position="absolute" top={0} left={0} right={0} flexDirection="row" overflow="hidden">
+                  {Array.from({ length: GLINT_TILES }, (_, i) => (
+                    <Box key={`glint:${i}`} flexShrink={0}>{picture(glintPiece(i, GLINT_TILES))}</Box>
+                  ))}
+                </Box>
               </Box>
             ) : (
               picture(spacerPiece(1, 6))

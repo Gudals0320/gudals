@@ -138,6 +138,12 @@ export function classify(isRunning: boolean, lastActivityAt: number, probe: Moni
 }
 
 // Only `claude://` links to a local session id ever reach the shell.
+// The app's new-chat screen for a folder: an absolute Windows path, encoded whole, so nothing in
+// it reaches cmd's `start` as an operator.
+export function newChatLink(folder: string) {
+  return /^[A-Za-z]:\\/.test(folder) ? `claude://code/new?folder=${encodeURIComponent(folder)}` : undefined
+}
+
 export function sessionLink(id: string) {
   return /^local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)
     ? `claude://claude.ai/epitaxy/${id}`
