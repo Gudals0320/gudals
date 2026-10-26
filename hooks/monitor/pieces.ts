@@ -242,6 +242,17 @@ export function worktreePiece(name: string): Piece {
   )
 }
 
+// A session pinned in the app's sidebar: a small teal tag beside its title.
+export function pinPiece(): Piece {
+  return html(
+    28,
+    18,
+    '고정',
+    `<div style="display:flex;align-items:center;height:18px"><span style="box-sizing:border-box;font-size:10px;line-height:14px;color:${C.teal};` +
+      `border:1px solid ${C.teal};border-radius:4px;padding:0 4px;white-space:nowrap">고정</span></div>`,
+  )
+}
+
 // The amber mark of an island that changed since it was last looked at: 10px across in a 2px ring
 // of the board's colour, centred on the card's top-right corner. The picture sits in the room kept
 // above and right of the card, `top` pixels tall to the corner.

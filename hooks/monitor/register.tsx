@@ -5,7 +5,7 @@ import type { MonitorFilter, MonitorFlash, MonitorGroup, MonitorObserved, Monito
 import { MIN, classify, describeActivity, parseEvents, sessionLink } from './classify'
 import { describeBackground, readChoice, readLocal } from './local'
 import type { Block, Choice } from './local'
-import { C, NODE_PX, badgePiece, cardCornerPiece, cardSidePiece, dashTilePiece, dotPiece, elbowPiece, frameLineSource, frameSide, glintPiece, gutterPiece, newDotPiece, pillPiece, railPiece, spacerPiece, worktreePiece } from './pieces'
+import { C, NODE_PX, badgePiece, pinPiece, cardCornerPiece, cardSidePiece, dashTilePiece, dotPiece, elbowPiece, frameLineSource, frameSide, glintPiece, gutterPiece, newDotPiece, pillPiece, railPiece, spacerPiece, worktreePiece } from './pieces'
 import type { DotState, Frame, Piece } from './pieces'
 
 // The monitor pulls: it reads the app's session list and each session's recent transcript when it
@@ -130,13 +130,13 @@ const islandOf = (cwd: string) => (folderName(cwd) === FOLDERLESS ? FOLDERLESS :
 
 const short = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
 
-// "지금", "N분", "N시간 M분", "N일", as the prototype's fmtAge.
+// "지금", "N분", "N시간", "N일": one unit, rounded down; "–" where the time is not known.
 function age(at: number, since: number | null) {
   if (since === null) return '–'
   const min = Math.floor((at - since) / MIN)
   if (min < 1) return '지금'
   if (min < 60) return `${min}분`
-  if (min < 1440) return `${Math.floor(min / 60)}시간${min % 60 ? ` ${min % 60}분` : ''}`
+  if (min < 1440) return `${Math.floor(min / 60)}시간`
   return `${Math.floor(min / 1440)}일`
 }
 
@@ -410,7 +410,28 @@ async function toggleMenu($: Engine, id: string) {
 
 async function startSessionRename($: Engine, id?: string) {
   renamingSession = id
+  draft = undefined
   await settleFlash($)
+}
+
+// A name being typed (a session's title or a group's name), kept as it is typed so that pressing
+// anything else on the board saves it, as Enter would. The desktop tells a mod nothing of a click
+// on the board's empty space, so only presses count.
+let draft: { key: string; value: string } | undefined
+const keepDraft = (key: string, value: string) => {
+  draft = { key, value }
+}
+
+async function saveDraft($: Engine, pressed: string) {
+  const held = draft
+  if (!held) return
+  draft = undefined
+  const [kind, id] = [held.key.slice(0, held.key.indexOf(':')), held.key.slice(held.key.indexOf(':') + 1)]
+  // Its own cancel drops it.
+  if (pressed === `${kind === 'title' ? 'title-cancel' : 'rename-cancel'}:${id}`) return
+  if (kind === 'name') return rename($, id, held.value)
+  const row = (await read($, view))?.rows.find(one => one.id === id)
+  if (row && held.value.trim() && held.value.trim() !== row.title) await sessionAction($, row, 'rename', held.value)
 }
 
 // What the menu does to a session, through the app's own tools; the app may ask the person first.
@@ -423,6 +444,7 @@ async function sessionAction($: Engine, row: MonitorRow, action: 'rename' | 'pin
         : (['ccd_sidebar', 'set_pinned', { session_id: row.id, pinned: action === 'pin' }] as const)
   menuFor = undefined
   renamingSession = undefined
+  draft = undefined
   if (!call) return settleFlash($)
   const word = { rename: '이름을 못 바꿈', pin: '고정 못 함', unpin: '고정을 못 풂', archive: '보관 못 함' }[action]
   try {
@@ -479,11 +501,13 @@ const ungroup = ($: Engine, id: string) => saveGroups($, groups.filter(group => 
 async function startRename($: Engine, id?: string) {
   renaming = id
   picking = undefined
+  draft = undefined
   await settleFlash($)
 }
 
 async function rename($: Engine, id: string, name: string) {
   renaming = undefined
+  draft = undefined
   const trimmed = name.trim()
   await saveGroups($, trimmed ? groups.map(group => (group.id === id ? { ...group, name: trimmed.slice(0, 40) } : group)) : groups)
 }
@@ -616,6 +640,12 @@ function childrenOf(island: IslandView, parentId: string | undefined) {
 }
 
 export function registerMonitor(on: On) {
+  // A press anywhere on the board first saves a name being typed, then does what it does.
+  on('ui.press', { plugin: 'gudals', component: 'Pane', requestId: PANE }, async ($, e, next) => {
+    await saveDraft($, e.element)
+    return next(e)
+  })
+
   on('tool.call', { tool: 'mcp__gudals__monitor_peek' }, async $ => {
     const now = await $.clock.now()
     const log = ((await $.store.get(REFRESH_LOG_KEY)) as [number, string][] | undefined) ?? []
@@ -732,7 +762,7 @@ export function registerMonitor(on: On) {
           {current.renamingSession === row.id ? (
             <>
               <Box flexGrow={1} flexShrink={1} minWidth={0}>
-                <Input key={`title:${row.id}`} value={row.title} submitLabel="저장" onSubmit={(value: string) => void sessionAction($, row, 'rename', value)} />
+                <Input key={`title:${row.id}`} value={draft?.key === `title:${row.id}` ? draft.value : row.title} submitLabel="저장" onInput={(value: string) => keepDraft(`title:${row.id}`, value)} onSubmit={(value: string) => void sessionAction($, row, 'rename', value)} />
               </Box>
               {item(`title-cancel:${row.id}`, '취소', () => void startSessionRename($))}
             </>
@@ -783,6 +813,7 @@ export function registerMonitor(on: On) {
               <Text size="caption" color={C.green} wrap="truncate-end">{activity}</Text>
             </Box>
           )}
+          {row.pinned && picture(pinPiece())}
           {isWorktree && picture(worktreePiece(worktreeLabel(row.cwd)))}
           {island.key === FOLDERLESS && seenless.has(keyOf(row)) && picture(newDotPiece())}
           <Box flexShrink={0} paddingRight="xs">
@@ -906,7 +937,7 @@ export function registerMonitor(on: On) {
         <Box key="head" flexDirection="row" alignItems="center" gap="xs">
           {picture(dotPiece(island.best))}
           {isCold && !groupOf.has(island.key) ? (
-            <Button key={`fold:${island.key}`} plain onPress={() => void toggleCold($, island.key)}>
+            <Button key={`fold-head:${island.key}`} plain onPress={() => void toggleCold($, island.key)}>
               <Text size="footnote" weight="semibold">{island.name}</Text>
             </Button>
           ) : (
@@ -1147,7 +1178,7 @@ export function registerMonitor(on: On) {
           <Box flexDirection="row" alignItems="center" gap="xs" paddingX="xs" flexShrink={1} minWidth={0} backgroundColor={C.bg}>
           {renaming === group.id ? (
             <>
-              <Input key={`name:${group.id}`} value={group.name} submitLabel="저장" onSubmit={(value: string) => void rename($, group.id, value)} />
+              <Input key={`name:${group.id}`} value={draft?.key === `name:${group.id}` ? draft.value : group.name} submitLabel="저장" onInput={(value: string) => keepDraft(`name:${group.id}`, value)} onSubmit={(value: string) => void rename($, group.id, value)} />
               {small(`rename-cancel:${group.id}`, '취소', () => void startRename($))}
             </>
           ) : (
@@ -1327,7 +1358,7 @@ function elapsedLabel(ms: number) {
   const s = Math.max(0, Math.round(ms / 1000))
   if (s < 60) return `${s}초째`
   const m = Math.round(s / 60)
-  return m < 60 ? `${m}분째` : `${Math.floor(m / 60)}시간 ${m % 60}분째`
+  return m < 60 ? `${m}분째` : m < 1440 ? `${Math.floor(m / 60)}시간째` : `${Math.floor(m / 1440)}일째`
 }
 
 function demoRows(at: number): MonitorRow[] {

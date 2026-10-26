@@ -222,10 +222,25 @@ test('a session menu renames, pins and archives through the app, and never delet
   await press(`menu:${ID.parent}`)
   expect((await ui.find({ key: `do-pin:${ID.parent}` }))?.text).toBe('고정 해제')
 
-  // Archive: the session leaves the board.
+  // A pinned session carries the tag.
+  expect((await ui.findAll({ type: 'Svg' })).some(one => String(one.props.alt) === '고정')).toBe(true)
+
+  // A name typed and left: pressing anything else saves it, as Enter would. (The menu is still open.)
+  await press(`do-rename:${ID.parent}`)
+  await ui.input({ key: `title:${ID.parent}`, text: 'AI 협업 (최종)', kind: 'change' })
+  await press(`menu:${ID.vlsi}`)
+  expect((await ui.find({ key: `open:${ID.parent}` }))?.text).toBe('AI 협업 (최종)')
+  // Its own cancel drops it.
+  await press(`menu:${ID.parent}`)
+  await press(`do-rename:${ID.parent}`)
+  await ui.input({ key: `title:${ID.parent}`, text: '버릴 이름', kind: 'change' })
+  await press(`title-cancel:${ID.parent}`)
+  expect((await ui.find({ key: `open:${ID.parent}` }))?.text).toBe('AI 협업 (최종)')
+
+  // Archive (the menu is still open after cancelling): the session leaves the board.
   await press(`do-archive:${ID.parent}`)
   expect(await ui.find({ key: `open:${ID.parent}` })).toBe(undefined)
-  expect(world.calls).toEqual([`set_session_title:${ID.parent}`, `set_pinned:${ID.parent}`, `archive_session:${ID.parent}`])
+  expect(world.calls).toEqual([`set_session_title:${ID.parent}`, `set_pinned:${ID.parent}`, `set_session_title:${ID.parent}`, `archive_session:${ID.parent}`])
   await ui.unmount()
 })
 
@@ -236,6 +251,7 @@ test('the board: islands by tier, answers inline, dormant islands folded, titles
   const ui = await $.ui.mount(PANE)
   const text = async (pattern: RegExp | string) => (await ui.find({ type: 'Text', text: pattern }))?.text
   const pictured = async (alt: string) => (await ui.findAll({ type: 'Svg' })).some(one => String(one.props.alt) === alt)
+  const press = (key: string) => $.ui.press({ plugin: 'gudals', key })
 
   // The header's counts are filters.
   expect((await ui.find({ key: 'filter:wait' }))?.text).toBe('대기 1')
@@ -244,6 +260,11 @@ test('the board: islands by tier, answers inline, dormant islands folded, titles
   // Each session's age is its own: the last activity, never the time the radar looked.
   expect(await text('29분')).toBe('29분')
   expect(await text('9분')).toBe('9분')
+  // One unit only: 2 hours 53 minutes reads "2시간".
+  await press(`fold:C:\\h\\HY-LMS`)
+  expect(await text(/^2시간$/)).toBe('2시간')
+  expect(await ui.find({ type: 'Text', text: /시간 \d+분/ })).toBe(undefined)
+  await press(`fold:C:\\h\\HY-LMS`)
   expect(await text('나를 기다림 · 2분째')).toBe('나를 기다림 · 2분째')
   expect(await text('어느 시안으로 갈까요?')).toBe('어느 시안으로 갈까요?')
   // The waiting session's choices are numbered buttons. Nothing has a shortcut: the desktop passes
