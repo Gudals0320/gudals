@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { describeBackground, innerCommand, parseProcesses, parseRegistry, taskOf, tasksUnder } from '../hooks/monitor/local'
+import { describeBackground, innerCommand, parseProcesses, parseRegistry, procQuery, taskOf, tasksUnder } from '../hooks/monitor/local'
 
 const MIN = 60_000
 const NOW = Date.UTC(2026, 9, 22, 12, 40)
@@ -60,4 +60,10 @@ test('describeBackground leads with the command, then the watches', () => {
   expect(describeBackground([run, other], NOW)).toBe('백그라운드 · npm run inquiry 외 1개 · 12분째')
   expect(describeBackground([watch], NOW)).toBe('감시만 남음 · run.log · 3분째')
   expect(describeBackground([], NOW)).toBe(undefined)
+})
+
+test('procQuery asks for the session processes and their children only', () => {
+  const script = procQuery([12, 345])
+  expect(script).toContain('-Filter "ProcessId=12 OR ParentProcessId=12 OR ProcessId=345 OR ParentProcessId=345"')
+  expect(script.includes('Get-CimInstance Win32_Process |')).toBe(false)
 })

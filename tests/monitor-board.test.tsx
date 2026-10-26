@@ -385,10 +385,16 @@ test('a state change leaves an unseen mark until it is looked at', async ($, on)
 
 test('in the folder-less island a change is marked on its own session, and opening it clears that one', async ($, on) => {
   const world: { running: boolean; isAskClosed?: boolean } = { running: true }
-  stage(on, world)
+  const { clock } = stage(on, world)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
   world.isAskClosed = true
+  // A changed transcript is scanned again at most every 10 seconds.
+  await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
+  const early = await $.ui.mount(PANE)
+  expect(await early.find({ key: 'filter:new' })).toBe(undefined)
+  await early.unmount()
+  await clock.advance(10_000)
   await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
   const ui = await $.ui.mount(PANE)
   const marks = async () => (await ui.findAll({ type: 'Svg' })).filter(one => String(one.props.alt) === '새 변경').length

@@ -103,18 +103,21 @@ export function describeBackground(tasks: BgTask[], at: number) {
 
 const PROC_MARKER = 'gudals-monitor-process-query'
 
-// Every process's id, parent and name; the command line and start time for shells only.
-const PROC_QUERY = [
-  `$null = '${PROC_MARKER}'`,
-  // Command lines can hold Korean; the console's own code page would mangle it.
-  '[Console]::OutputEncoding = [Text.Encoding]::UTF8',
-  "Get-CimInstance Win32_Process | ForEach-Object {",
-  "  $shell = $_.Name -match '^(bash|sh|pwsh|powershell|cmd)\\.exe$'",
-  "  [pscustomobject]@{ p = [int]$_.ProcessId; pp = [int]$_.ParentProcessId; n = $_.Name;",
-  "    c = $(if ($shell) { $_.CommandLine } else { $null });",
-  "    t = $(if ($shell -and $_.CreationDate) { $_.CreationDate.ToUniversalTime().ToString('o') } else { $null }) }",
-  "} | ConvertTo-Json -Compress",
-].join('\n')
+// The session processes and their children only, not the machine's whole process table: each one's
+// id, parent and name; the command line and start time for shells only. The ids are whole numbers.
+export const procQuery = (pids: number[]) =>
+  [
+    `$null = '${PROC_MARKER}'`,
+    // Command lines can hold Korean; the console's own code page would mangle it.
+    '[Console]::OutputEncoding = [Text.Encoding]::UTF8',
+    `Get-CimInstance Win32_Process -Filter "${pids.map(pid => `ProcessId=${Math.trunc(pid)} OR ParentProcessId=${Math.trunc(pid)}`).join(' OR ')}" | ForEach-Object {`,
+    "  $shell = $_.Name -match '^(bash|sh|pwsh|powershell|cmd)\\.exe$'",
+    "  [pscustomobject]@{ p = [int]$_.ProcessId; pp = [int]$_.ParentProcessId; n = $_.Name;",
+    "    c = $(if ($shell) { $_.CommandLine } else { $null });",
+    "    t = $(if ($shell -and $_.CreationDate) { $_.CreationDate.ToUniversalTime().ToString('o') } else { $null }) }",
+    // ConvertTo-Json writes one object bare and none as nothing; parseProcesses takes both.
+    '} | ConvertTo-Json -Compress',
+  ].join('\n')
 
 const registryCache = new Map<string, { mtimeMs: number; one: Registered | undefined }>()
 
@@ -140,31 +143,34 @@ async function readRegistry($: Engine) {
   return found
 }
 
-// The process table costs a PowerShell start, so it is read at most this often; the sessions' own
-// state files are read on every refresh.
-const PROC_TTL_MS = 15_000
-let procCache: { at: number; procs: Proc[] } | undefined
+// The process query costs a PowerShell start, so it runs at most this often, or sooner when a session
+// process starts or ends; the sessions' own state files are read on every refresh.
+const PROC_TTL_MS = 30_000
+let procCache: { at: number; pids: string; procs: Proc[] } | undefined
 let procsInFlight: Promise<Proc[]> | undefined
 
-async function queryProcesses($: Engine) {
-  const ran = await $.process.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', PROC_QUERY], { timeoutMs: 15_000 })
+async function queryProcesses($: Engine, pids: number[]) {
+  if (pids.length === 0) return []
+  const ran = await $.process.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', procQuery(pids)], { timeoutMs: 15_000 })
   if (ran.exitCode !== 0) throw new Error(ran.stderr.slice(0, 200))
-  return parseProcesses(ran.stdout)
+  return ran.stdout.trim() ? parseProcesses(ran.stdout) : []
 }
 
-async function readProcesses($: Engine) {
+async function readProcesses($: Engine, pids: number[]) {
   const now = await $.clock.now()
-  if (procCache && now - procCache.at < PROC_TTL_MS) return procCache.procs
-  procsInFlight ??= queryProcesses($).finally(() => (procsInFlight = undefined))
+  const key = [...pids].sort((a, b) => a - b).join(',')
+  if (procCache && procCache.pids === key && now - procCache.at < PROC_TTL_MS) return procCache.procs
+  procsInFlight ??= queryProcesses($, pids).finally(() => (procsInFlight = undefined))
   const procs = await procsInFlight
-  procCache = { at: now, procs }
+  procCache = { at: now, pids: key, procs }
   return procs
 }
 
 // Local facts per app session id; undefined when this machine does not give them up.
 export async function readLocal($: Engine): Promise<Map<string, LocalInfo> | undefined> {
   try {
-    const [registered, procs] = await Promise.all([readRegistry($), readProcesses($)])
+    const registered = await readRegistry($)
+    const procs = await readProcesses($, registered.map(one => one.pid))
     const alive = new Set(procs.map(one => one.pid))
     const out = new Map<string, LocalInfo>()
     for (const one of registered) {
@@ -234,7 +240,8 @@ export function choiceOf(line: string): Choice | undefined {
 export const projectDirName = (cwd: string) => cwd.replace(/[^A-Za-z0-9]/g, '-')
 
 // Keyed by transcript path; a scan already under way is shared by refreshes that overlap it.
-const choiceCache = new Map<string, { mtimeMs: number; choice: Promise<Choice | Block | undefined> }>()
+const choiceCache = new Map<string, { mtimeMs: number; at: number; choice: Promise<Choice | Block | undefined> }>()
+const CHOICE_SCAN_MS = 10_000
 
 // What a session's transcript leaves waiting on the person, newest first: a next-step box or a
 // prompt a hook dropped. Found by PowerShell so the radar never holds the whole file (they run to
@@ -244,10 +251,13 @@ export async function readChoice($: Engine, info: LocalInfo): Promise<Choice | B
   const path = `${await configDir($)}\\projects\\${projectDirName(info.cwd)}\\${info.cliId}.jsonl`
   try {
     const { mtimeMs } = await $.fs.stat(path)
+    const now = await $.clock.now()
     const cached = choiceCache.get(path)
-    if (cached && cached.mtimeMs === mtimeMs) return await cached.choice
+    // A transcript that keeps changing (shells finishing one after another, each leaving a note) is
+    // scanned again at most this often; what it last showed stands until then.
+    if (cached && (cached.mtimeMs === mtimeMs || now - cached.at < CHOICE_SCAN_MS)) return await cached.choice
     const choice = scanChoice($, path)
-    choiceCache.set(path, { mtimeMs, choice })
+    choiceCache.set(path, { mtimeMs, at: now, choice })
     return await choice
   } catch {
     return undefined
