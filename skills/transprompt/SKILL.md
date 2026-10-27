@@ -1,6 +1,6 @@
 ---
-description: "음성 프롬프트 구조화: on | off | auto | review | status | why"
-argument-hint: "on | off | auto | review | status | why"
+description: "음성 프롬프트 구조화: on | off | auto | review | status | why, 또는 바로 구조화할 내용"
+argument-hint: "on | off | auto | review | status | why | [구조화할 내용]"
 disable-model-invocation: true
 ---
 

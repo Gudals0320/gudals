@@ -382,3 +382,51 @@ test('a built-in command is left alone, and why shows how the prompt was entered
   expect(why.text).toContain('/compact는 내장 명령')
   expect(why.text).toContain('키로 친 글자 0 / 한 번에 들어온 글자 0')
 })
+
+// /transprompt 뒤에 옵션이 아닌 내용을 쓰면: 짧고 키보드로 친 모양이어도, 꺼져 있어도, 검토 모드여도 구조화해서 바로 보낸다.
+async function startForDirect($: Engine, on: On, sent: string[]) {
+  on('model.complete', () => ({ value: { isAnswered: true, text: STRUCTURED, usage: USAGE } }))
+  on('command.register', () => ({ value: { command: 'transprompt' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.close', () => ({ value: undefined }))
+  on('ui.status', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('prompt.submit', (_, e) => {
+    sent.push(e.text)
+    return { text: e.text }
+  })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+}
+
+test('/transprompt with text structures it and sends it at once, whatever the gate and mode say', { options: { transpromptAuto: false } }, async ($, on) => {
+  const sent: string[] = []
+  mock.store(on)
+  const clock = mock.clock(on)
+  await startForDirect($, on, sent)
+  await $.command.run({ command: 'transprompt', args: 'off' })
+
+  const answer = await $.command.run({ command: 'transprompt', args: '# 로그인\n- 버튼 고쳐' })
+  expect(answer.text ?? '').toBe('')
+  await clock.settle()
+
+  expect(sent.length).toBe(1)
+  expect(sent[0]).toContain('# 로그인 페이지 수정')
+  expect(await findInPane($, { key: 'approve' })).toBeUndefined()
+})
+
+test('a lone option word still sets the option, and anything longer is text, on both names', async ($, on) => {
+  const sent: string[] = []
+  mock.store(on)
+  const clock = mock.clock(on)
+  await startForDirect($, on, sent)
+
+  const status = await $.command.run({ command: 'gudals:transprompt', args: ' status ' })
+  expect(status.text).toContain('transprompt: 켜짐')
+  expect(sent).toEqual([])
+
+  await $.command.run({ command: 'gudals:transprompt', args: 'status 화면이 안 떠서 고쳐 줘' })
+  await clock.settle()
+  expect(sent.length).toBe(1)
+  expect(sent[0]).toContain('# 로그인 페이지 수정')
+})

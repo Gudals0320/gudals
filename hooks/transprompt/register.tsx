@@ -214,8 +214,18 @@ async function isAuto($: EngineInterface, settings: Settings) {
   return typeof saved === 'boolean' ? saved : settings.auto
 }
 
+// 인자가 비었거나 이 단어 하나뿐이면 옵션이다. 그 밖의 인자는 구조화할 내용으로 본다.
+const OPTIONS = new Set(['', 'on', 'off', 'auto', 'review', 'status', 'why'])
+
 async function runCommand($: EngineInterface, args: string, settings: Settings) {
   const arg = args.trim()
+  if (!OPTIONS.has(arg)) {
+    // 직접 넘긴 내용은 음성 판정·최소 글자 수·켜짐 여부와 상관없이 구조화하고, 모드와 상관없이 바로 보낸다.
+    void structure($, arg, settings.model, true)
+    void $.ui.open({ id: PANE, title: TITLE })
+
+    return {}
+  }
   if (arg === 'why') {
     // 입력 방식이 0 / 0이면 이 화면에서는 입력창 편집이 mod에 오지 않아, 텍스트 모양만으로 판정한 것이다.
     const stats = lastEdits ? ` (입력 방식: 키로 친 글자 ${lastEdits.keyed} / 한 번에 들어온 글자 ${lastEdits.keyless})` : ''
@@ -250,8 +260,8 @@ export const registerTransprompt: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'transprompt',
-      description: '음성 프롬프트 구조화: on | off | auto | review | status | why',
-      argumentHint: 'on | off | auto | review | status | why',
+      description: '음성 프롬프트 구조화: on | off | auto | review | status | why, 또는 바로 구조화할 내용',
+      argumentHint: 'on | off | auto | review | status | why | [구조화할 내용]',
     })
 
     return next(e)
