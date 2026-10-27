@@ -354,7 +354,8 @@ test('islands framed as a group: made by picking two, renamed, added to, left an
   await press(`add:${id}`)
   expect((await ui.find({ key: `join:${SCRATCH}` }))?.text).toBe('넣기')
   await press(`join:${SCRATCH}`)
-  expect((await ui.find({ type: 'Text', text: /^섬 3 · / }))?.text).toBe('섬 3 · 세션 4')
+  // Its one session waits, so it rises out of the frame; the island keeps its place, empty.
+  expect((await ui.find({ type: 'Text', text: /^섬 3 · / }))?.text).toBe('섬 3 · 세션 3')
 
   // 빼기 takes one out; 풀기 undoes the frame.
   await press(`leave:${SCRATCH}`)
@@ -362,6 +363,40 @@ test('islands framed as a group: made by picking two, renamed, added to, left an
   await press(`ungroup:${id}`)
   expect(await ui.find({ key: `rename:${id}` })).toBe(undefined)
   expect((await ui.find({ key: `group:${LEC}` }))?.text).toBe('묶기')
+  await ui.unmount()
+})
+
+test('a waiting session in a group rises alone, on a card naming its group; the group stays put', async ($, on) => {
+  stage(on, { running: true })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
+  const ui = await $.ui.mount(PANE)
+  const press = (key: string) => $.ui.press({ plugin: 'gudals', key })
+  const LEC = 'C:\\w\\lecture-artifact'
+  const SCRATCH = '폴더 없음'
+
+  // The folder-less island holds the waiting session; group it with the working one.
+  await press(`group:${LEC}`)
+  await press(`join:${SCRATCH}`)
+  const name = await ui.find({ type: 'Button', text: 'lecture-artifact 외' })
+  expect(name !== undefined).toBe(true)
+
+  // The question has a card of its own at the top, named after the group, answers and all.
+  const keys = (await ui.findAll({})).map(one => String(one.key ?? ''))
+  const lifted = keys.indexOf(`place:ask:${ID.ask}`)
+  expect(lifted >= 0).toBe(true)
+  expect(lifted < keys.findIndex(key => key.startsWith('grp:'))).toBe(true)
+  // The group's name shows twice: on its frame, and on the card that rose out of it.
+  expect((await ui.findAll({ type: 'Text', text: 'lecture-artifact 외' })).length).toBe(2)
+  expect((await ui.find({ key: `answer:${ID.ask}:0` }))?.text).toBe('1 A + C피크')
+  // It is shown once: the group keeps only what does not wait, and an island left with nothing
+  // keeps its place, saying where its question went, so it can still leave the group.
+  expect((await ui.findAll({ key: `node:${ID.ask}` })).length).toBe(1)
+  expect((await ui.find({ type: 'Text', text: /^섬 2 · / }))?.text).toBe('섬 2 · 세션 1')
+  expect((await ui.find({ type: 'Text', text: '질문은 위에' }))?.text).toBe('질문은 위에')
+  expect((await ui.find({ key: `leave:${SCRATCH}` }))?.text).toBe('빼기')
+  // The lifted card cannot be grouped again.
+  expect(await ui.find({ key: `group:ask:${ID.ask}` })).toBe(undefined)
   await ui.unmount()
 })
 

@@ -640,7 +640,9 @@ type Tier = 'hot' | 'live' | 'warm' | 'cold'
 const TIER_ORDER: Record<Tier, number> = { hot: 0, live: 1, warm: 2, cold: 3 }
 const RANK: Record<DotState, number> = { blocked: 0, waiting: 0, working: 1, background: 2, paused: 3, done: 4 }
 
-type IslandView = { key: string; name: string; rows: MonitorRow[]; best: DotState; tier: Tier; latest: number; why: string }
+// `home`: on a card lifted out of its island, the island it came from.
+type IslandView = { key: string; name: string; rows: MonitorRow[]; best: DotState; tier: Tier; latest: number; why: string; home?: string }
+const homeKey = (island: IslandView) => island.home ?? island.key
 
 // Repositories as islands: tier from the most pressing session in them, then the most recent.
 export function buildIslands(rows: MonitorRow[], at: number): IslandView[] {
@@ -651,25 +653,28 @@ export function buildIslands(rows: MonitorRow[], at: number): IslandView[] {
     groups.set(home, [...(groups.get(home) ?? []), row])
   }
   return [...groups.entries()]
-    .map(([key, members]) => {
-      const best = members.map(rowDot).sort((a, b) => RANK[a] - RANK[b])[0] ?? 'paused'
-      const latest = Math.max(...members.map(row => Math.max(row.lastActivityAt, row.since ?? 0)))
-      const tier: Tier =
-        best === 'waiting' || best === 'blocked' ? 'hot' : best === 'working' ? 'live' : best === 'background' || at - latest < COLD_MS ? 'warm' : 'cold'
-      const shells = members.filter(row => row.state === 'background').reduce((sum, row) => sum + (row.tasks?.length ?? 0), 0)
-      const oldestWait = members.filter(row => row.state === 'waiting').sort((a, b) => timeOf(a) - timeOf(b))[0]
-      const why = oldestWait
-        ? rowDot(oldestWait) === 'blocked'
-          ? 'HOOK'
-          : `나를 기다림 · ${age(at, oldestWait.since)}째`
-        : best === 'working'
-          ? '실행 중'
-          : best === 'background'
-            ? `백그라운드 ${shells || ''}`.trim()
-            : ''
-      return { key, name: folderName(key), rows: members, best, tier, latest, why }
-    })
+    .map(([key, members]) => islandView(key, members, at))
     .sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier] || b.latest - a.latest)
+}
+
+// One island from its sessions: its most pressing state, its tier and what its head says.
+export function islandView(key: string, members: MonitorRow[], at: number): IslandView {
+  const best = members.map(rowDot).sort((a, b) => RANK[a] - RANK[b])[0] ?? 'paused'
+  const latest = Math.max(...members.map(row => Math.max(row.lastActivityAt, row.since ?? 0)))
+  const tier: Tier =
+    best === 'waiting' || best === 'blocked' ? 'hot' : best === 'working' ? 'live' : best === 'background' || at - latest < COLD_MS ? 'warm' : 'cold'
+  const shells = members.filter(row => row.state === 'background').reduce((sum, row) => sum + (row.tasks?.length ?? 0), 0)
+  const oldestWait = members.filter(row => row.state === 'waiting').sort((a, b) => timeOf(a) - timeOf(b))[0]
+  const why = oldestWait
+    ? rowDot(oldestWait) === 'blocked'
+      ? 'HOOK'
+      : `나를 기다림 · ${age(at, oldestWait.since)}째`
+    : best === 'working'
+      ? '실행 중'
+      : best === 'background'
+        ? `백그라운드 ${shells || ''}`.trim()
+        : ''
+  return { key, name: folderName(key), rows: members, best, tier, latest, why }
 }
 
 // A session's children inside its island, most pressing first, then the most recent.
@@ -743,7 +748,7 @@ export function registerMonitor(on: On) {
     const keys = new Set(allIslands.flatMap(island => (island.key === FOLDERLESS ? island.rows.map(keyOf) : [island.key])))
     const seenless = new Set((current.unseen ?? []).filter(key => keys.has(key)))
     const hasUnseen = (island: IslandView) =>
-      island.key === FOLDERLESS ? island.rows.some(row => seenless.has(keyOf(row))) : seenless.has(island.key)
+      homeKey(island) === FOLDERLESS ? island.rows.some(row => seenless.has(keyOf(row))) : seenless.has(homeKey(island))
     const flash = current.flash ?? {}
     const unfolded = new Set(current.openCold ?? [])
     const chosen: MonitorFilter = current.filter ?? 'all'
@@ -838,7 +843,7 @@ export function registerMonitor(on: On) {
       const under = children.length ? [...goesOn, depth] : goesOn
       const rail = (height: number) => picture(railPiece(depth, height, under))
       const fill = (text: JSX.Element) => <Box flexGrow={1} flexShrink={1} minWidth={0}>{text}</Box>
-      const isWorktree = row.cwd !== island.key && island.key !== FOLDERLESS
+      const isWorktree = row.cwd !== homeKey(island) && homeKey(island) !== FOLDERLESS
       const accent = state === 'blocked' ? C.hook : state === 'waiting' ? C.amber : state === 'working' ? C.green : undefined
       const activity = state === 'working' && row.activity
       const lines: JSX.Element[] = [
@@ -949,7 +954,7 @@ export function registerMonitor(on: On) {
     // island or group being picked for.
     const groupOf = new Map(groups.flatMap(group => group.keys.map(key => [key, group] as const)))
     const isTarget = (island: IslandView) => {
-      if (!picking || groupOf.has(island.key)) return false
+      if (!picking || island.home || groupOf.has(island.key)) return false
       return picking.kind === 'group' || picking.key !== island.key
     }
     const headAction = (island: IslandView) => {
@@ -958,6 +963,11 @@ export function registerMonitor(on: On) {
           <Text size="caption">{label}</Text>
         </Button>
       )
+      // A lifted card names the group its island stays in.
+      if (island.home) {
+        const group = groupOf.get(island.home)
+        return group ? <Text key={`from:${island.key}`} size="caption" color={C.fg3} wrap="truncate-end">{group.name}</Text> : undefined
+      }
       if (groupOf.has(island.key)) return action(`leave:${island.key}`, '빼기', () => void leaveGroup($, island.key))
       if (isTarget(island)) return action(`join:${island.key}`, picking?.kind === 'group' ? '넣기' : '합치기', () => void join($, { kind: 'island', key: island.key }), true)
       const isPicking = picking?.kind === 'island' && picking.key === island.key
@@ -966,11 +976,11 @@ export function registerMonitor(on: On) {
 
     const islandCard = (island: IslandView) => {
       const isCold = island.tier === 'cold'
-      const isFolderless = island.key === FOLDERLESS
+      const isFolderless = homeKey(island) === FOLDERLESS
       const hotColor = island.best === 'blocked' ? C.hook : C.amber
       const target = isTarget(island)
       const borderColor = target ? C.teal : island.tier === 'hot' ? hotColor : island.tier === 'live' ? C.green : isFolderless ? C.line2 : C.line
-      const flashing = flash[island.key]
+      const flashing = flash[homeKey(island)]
       const base = target ? PICK_BG : isFolderless ? C.bg : C.panel2
       const background = flashing === 'waiting' ? C.amberBg : flashing === 'working' ? C.greenBg : flashing === 'other' ? C.panel3 : base
       const whyColor = island.tier === 'hot' ? hotColor : island.tier === 'live' ? C.green : island.best === 'background' ? C.teal : C.fg3
@@ -986,7 +996,7 @@ export function registerMonitor(on: On) {
             <Text size="footnote" weight="semibold" color={isFolderless ? C.fg2 : undefined} wrap="truncate-end">{island.name}</Text>
           )}
           {!isFolderless && (
-            <Button key={`new:${island.key}`} plain dimColor onPress={() => void openNewChat($, island.key)}>
+            <Button key={`new:${island.key}`} plain dimColor onPress={() => void openNewChat($, homeKey(island))}>
               <Text size="caption">+</Text>
             </Button>
           )}
@@ -1081,7 +1091,19 @@ export function registerMonitor(on: On) {
       (chosen === 'wait' && island.rows.some(row => row.state === 'waiting')) ||
       (chosen === 'work' && island.rows.some(row => dotOf(row.state) === 'working')) ||
       (chosen === 'new' && hasUnseen(island))
-    const islands = allIslands.filter(matches)
+    // A waiting session in a grouped island leaves it for the top of the board, on a card of its
+    // own: the question rises alone and the group keeps the place its other sessions give it.
+    const asking: IslandView[] = []
+    const split = allIslands.flatMap(island => {
+      const lifted = groupOf.has(island.key) ? island.rows.filter(row => row.state === 'waiting') : []
+      if (lifted.length === 0) return [island]
+      asking.push(...lifted.map(row => ({ ...islandView(island.key, [row], at), key: `ask:${row.id}`, home: island.key })))
+      // An island left with nothing keeps its place in the group, saying where its question went.
+      const rest = island.rows.filter(row => row.state !== 'waiting')
+      return [rest.length ? islandView(island.key, rest, at) : { ...island, rows: [], best: 'paused' as const, tier: 'warm' as const, why: '질문은 위에' }]
+    })
+    const islands = split.filter(matches)
+    const lifted = asking.filter(matches).sort((a, b) => timeOf(a.rows[0]!) - timeOf(b.rows[0]!))
     const free = islands.filter(island => !groupOf.has(island.key))
     const hot = free.filter(island => island.tier === 'hot')
     const active = free.filter(island => island.tier === 'live' || island.tier === 'warm')
@@ -1287,6 +1309,11 @@ export function registerMonitor(on: On) {
       )
     }
     const board = [
+      ...lifted.map(island => (
+        <Box key={`row:${island.key}`} flexDirection="row">
+          {placed(island, BADGE_ROOM.top, true)}
+        </Box>
+      )),
       groupColumns('hotgroups', framedGroups.filter(one => one.rank === TIER_ORDER.hot)),
       ...hot.map(island => (
         <Box key={`row:${island.key}`} flexDirection="row">
