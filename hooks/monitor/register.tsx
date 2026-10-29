@@ -53,8 +53,6 @@ const BOARD_PAD = 8
 // gap under what is above it. The room inside it under its last card. The tint of what can be picked.
 const GROUP_ROOM = 30
 const GROUP_FOOT = 8
-// About how tall a row of dormant chips draws, in pixels.
-const CHIP_ROW_PX = 26
 const PICK_BG = '#1c2422'
 // How tall the desktop draws a plain button with a caption label.
 const BUTTON_PX = 20
@@ -109,6 +107,11 @@ const SENT_MS = 10 * MIN
 let filter: MonitorFilter = 'all'
 // Dev only: draw the board this many pixels wide, to check a narrow pane.
 let forcedWidth: number | undefined
+// When each island entered its tier, so that within a tier the board moves only when a state
+// changes, not with every step a session takes; and the column each block was first given, so a
+// card that grows does not send its neighbours across.
+const tierEntered = new Map<string, { tier: Tier; at: number }>()
+const sideOf = new Map<string, number>()
 
 // One question of one session: a closed question stays closed until the session asks another.
 export function waitKey(id: string, text: string | undefined, options: string[] | undefined) {
@@ -957,6 +960,8 @@ export function registerMonitor(on: On) {
     // What an island's head offers while grouping: leave its group, start, cancel, or take the
     // island or group being picked for.
     const groupOf = new Map(groups.flatMap(group => group.keys.map(key => [key, group] as const)))
+    // A dormant island in a group keeps its card, its title only, until unfolded.
+    const isFoldedInGroup = (island: IslandView) => island.tier === 'cold' && groupOf.has(island.key) && !unfolded.has(island.key)
     const isTarget = (island: IslandView) => {
       if (!picking || island.home || groupOf.has(island.key)) return false
       return picking.kind === 'group' || picking.key !== island.key
@@ -980,6 +985,7 @@ export function registerMonitor(on: On) {
 
     const islandCard = (island: IslandView) => {
       const isCold = island.tier === 'cold'
+      const isTitleOnly = isFoldedInGroup(island)
       const isFolderless = homeKey(island) === FOLDERLESS
       const hotColor = island.best === 'blocked' ? C.hook : C.amber
       const target = isTarget(island)
@@ -1012,7 +1018,11 @@ export function registerMonitor(on: On) {
         </Box>
       )
       const roots = childrenOf(island, undefined)
-      const padded = (
+      const padded = isTitleOnly ? (
+        <Box key="inside" flexDirection="column" paddingX="sm" paddingY="xs">
+          {head}
+        </Box>
+      ) : (
         <Box key="inside" flexDirection="column" paddingX="sm" paddingY="xs">
           {head}
           <Box key="rule" flexDirection="column">
@@ -1106,7 +1116,16 @@ export function registerMonitor(on: On) {
       const rest = island.rows.filter(row => row.state !== 'waiting')
       return [rest.length ? islandView(island.key, rest, at) : { ...island, rows: [], best: 'paused' as const, tier: 'warm' as const, why: '질문은 위에' }]
     })
-    const islands = split.filter(matches)
+    // Within a tier, the island that entered it last comes first; one seen for the first time
+    // counts from its last activity.
+    const entered = (island: IslandView) => {
+      const known = tierEntered.get(island.key)
+      if (known?.tier === island.tier) return known.at
+      const since = known ? at : island.latest
+      tierEntered.set(island.key, { tier: island.tier, at: since })
+      return since
+    }
+    const islands = split.filter(matches).sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier] || entered(b) - entered(a))
     const lifted = asking.filter(matches).sort((a, b) => timeOf(a.rows[0]!) - timeOf(b.rows[0]!))
     const free = islands.filter(island => !groupOf.has(island.key))
     const hot = free.filter(island => island.tier === 'hot')
@@ -1121,7 +1140,25 @@ export function registerMonitor(on: On) {
         const shells = state === 'working' || state === 'background' ? (row.tasks?.length ?? 0) * 22 : 0
         return NODE_PX + asks + shells
       }
+      if (isFoldedInGroup(island)) return room + 26 + 12
       return room + 26 + 13 + island.rows.reduce((sum, row) => sum + rowsOf(row), 0) + 12
+    }
+    // Two columns of blocks, each keeping the column it was first given; a new one goes under the
+    // shorter column. Once a column has emptied, the blocks are spread afresh.
+    const settle = <T extends { key: string; height: number }>(blocks: T[]) => {
+      const place = (isSticky: boolean) => {
+        const columns: T[][] = [[], []]
+        const sums = [0, 0]
+        for (const block of blocks) {
+          const side = (isSticky ? sideOf.get(block.key) : undefined) ?? (sums[1]! < sums[0]! ? 1 : 0)
+          sideOf.set(block.key, side)
+          columns[side]!.push(block)
+          sums[side]! += block.height
+        }
+        return columns
+      }
+      const columns = place(true)
+      return blocks.length > 1 && columns.some(column => column.length === 0) ? place(false) : columns
     }
     // Two to a row, side by side at one height, while the cards are about as tall as each other.
     // Where they differ a lot, two columns instead, each card under the shorter one, so short cards
@@ -1171,32 +1208,22 @@ export function registerMonitor(on: On) {
       .map(group => ({ group, members: islands.filter(island => group.keys.includes(island.key)) }))
       .filter(one => one.members.length > 0)
       .map(one => ({ ...one, rank: Math.min(...one.members.map(island => TIER_ORDER[island.tier])) }))
-      .sort((a, b) => a.rank - b.rank)
-    // In a group as outside one, a dormant island is a chip until unfolded: being in a group does
-    // not keep it open.
-    const isFolded = (island: IslandView) => island.tier === 'cold' && !unfolded.has(island.key)
+      // A group moves by its most pressing islands: when the latest of them entered that tier.
+      .map(one => ({ ...one, latest: Math.max(...one.members.filter(island => TIER_ORDER[island.tier] === one.rank).map(entered)) }))
+      .sort((a, b) => a.rank - b.rank || b.latest - a.latest)
     const groupHeight = (one: (typeof framedGroups)[number]) =>
-      GROUP_ROOM +
-      GROUP_FOOT +
-      one.members.filter(island => !isFolded(island)).reduce((sum, island) => sum + heightOf(island, BADGE_ROOM.top), 0) +
-      (one.members.some(isFolded) ? CHIP_ROW_PX : 0)
+      GROUP_ROOM + GROUP_FOOT + one.members.reduce((sum, island) => sum + heightOf(island, BADGE_ROOM.top), 0)
     // Groups stand side by side where the pane is wide enough: two columns, each group under the
     // shorter one, so groups of different heights interlock. Narrow, the second column wraps under.
     const groupColumns = (key: string, list: typeof framedGroups) => {
       if (list.length === 0) return false
       if (list.length === 1) return groupFrame(list[0]!)
-      const columns: (typeof framedGroups)[] = [[], []]
-      const sums = [0, 0]
-      for (const one of list) {
-        const side = sums[1]! < sums[0]! ? 1 : 0
-        columns[side]!.push(one)
-        sums[side]! += groupHeight(one)
-      }
+      const columns = settle(list.map(one => ({ key: `g:${one.group.id}`, height: groupHeight(one), one })))
       return (
         <Box key={key} flexDirection="row" flexWrap="wrap" alignItems="flex-start" columnGap={COLUMN_GAP}>
           {columns.map((column, side) => (
             <Box key={`${key}:col${side}`} flexDirection="column" width={CARD_MIN_CELLS} minWidth={0} flexGrow={1} flexShrink={1}>
-              {column.map(groupFrame)}
+              {column.map(block => groupFrame(block.one))}
             </Box>
           ))}
         </Box>
@@ -1206,31 +1233,25 @@ export function registerMonitor(on: On) {
     // island) under the shorter one, so a lone island fills the hole beside a short group instead of
     // running the whole width. Narrow, the second column wraps under the first.
     const mixedColumns = (list: typeof framedGroups, loose: IslandView[]) => {
-      // Groups and islands in one order: by their most pressing island's tier, then the latest activity.
+      // Groups and islands in one order: by their most pressing island's tier, then by when they entered it.
       const blocks = [
         ...list.map(one => ({
           key: `g:${one.group.id}`,
           rank: one.rank,
-          latest: Math.max(...one.members.map(island => island.latest)),
+          latest: one.latest,
           height: groupHeight(one),
           draw: () => groupFrame(one),
         })),
         ...loose.map(island => ({
           key: `i:${island.key}`,
           rank: TIER_ORDER[island.tier],
-          latest: island.latest,
+          latest: entered(island),
           height: heightOf(island, BADGE_ROOM.top),
           draw: () => placed(island, BADGE_ROOM.top, true),
         })),
       ].sort((a, b) => a.rank - b.rank || b.latest - a.latest)
       if (blocks.length === 1) return <Box key="mixed" flexDirection="column">{blocks[0]!.draw()}</Box>
-      const columns: (typeof blocks)[] = [[], []]
-      const sums = [0, 0]
-      for (const block of blocks) {
-        const side = sums[1]! < sums[0]! ? 1 : 0
-        columns[side]!.push(block)
-        sums[side]! += block.height
-      }
+      const columns = settle(blocks)
       return (
         <Box key="mixed" flexDirection="row" flexWrap="wrap" alignItems="flex-start" columnGap={COLUMN_GAP}>
           {columns.map((column, side) => (
@@ -1285,20 +1306,14 @@ export function registerMonitor(on: On) {
           {picture(spacerPiece(1, GROUP_ROOM))}
           <Box position="relative" flexDirection="column" minWidth={0} borderStyle="round" borderColor={C.teal} backgroundColor={takes ? PICK_BG : undefined} paddingX="xs" paddingBottom="xs">
             {label}
-            {/* A group's islands stack in one column, top to bottom; its dormant ones are chips under them. */}
-            {members.filter(island => !isFolded(island)).map(island => (
+            {/* A group's islands stack in one column, top to bottom. */}
+            {members.map(island => (
               <Box key={`grprow:${island.key}`} flexDirection="row">
                 {/* The same room on the left as each card keeps on its right for its mark. */}
                 {picture(spacerPiece(BADGE_ROOM.right, 1))}
                 {placed(island, BADGE_ROOM.top, true)}
               </Box>
             ))}
-            {members.some(isFolded) && (
-              <Box key={`grpchips:${group.id}`} flexDirection="row" flexWrap="wrap" gap="xs" paddingTop="xs">
-                {picture(spacerPiece(BADGE_ROOM.right, 1))}
-                {members.filter(isFolded).map(coldChip)}
-              </Box>
-            )}
             {picture(spacerPiece(1, GROUP_FOOT))}
           </Box>
         </Box>

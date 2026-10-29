@@ -402,7 +402,7 @@ test('a waiting session in a group rises alone, on a card naming its group; the 
   await ui.unmount()
 })
 
-test('dormant islands sit on two shelves, and in a group they fold into chips too', async ($, on) => {
+test('dormant islands sit on two shelves, and in a group they keep a title-only card', async ($, on) => {
   stage(on, { running: true })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
@@ -420,7 +420,7 @@ test('dormant islands sit on two shelves, and in a group they fold into chips to
   expect(keys.indexOf(`fold:${LMS}`) >= 0).toBe(true)
   expect(keys.indexOf(`fold:${LMS}`) < keys.indexOf(`fold:${OLD}`)).toBe(true)
 
-  // In a group, the dormant island is a chip in the frame, not an open card; it folds and unfolds there.
+  // In a group, the dormant island keeps its card with only its title; the title opens and folds it.
   await press(`fold:${LMS}`)
   await press(`group:${LEC}`)
   await press(`join:${LMS}`)
@@ -428,8 +428,9 @@ test('dormant islands sit on two shelves, and in a group they fold into chips to
   expect((await ui.find({ key: `node:${ID.lms}` })) !== undefined).toBe(true)
   await press(`fold-head:${LMS}`)
   expect(await ui.find({ key: `node:${ID.lms}` })).toBe(undefined)
-  expect((await ui.find({ key: `fold:${LMS}` }))?.text).toBe('HY-LMS 1')
-  await press(`fold:${LMS}`)
+  expect(await ui.find({ key: `fold:${LMS}` })).toBe(undefined)
+  expect((await ui.find({ key: `fold-head:${LMS}` }))?.text).toBe('HY-LMS')
+  await press(`fold-head:${LMS}`)
   expect((await ui.find({ key: `node:${ID.lms}` })) !== undefined).toBe(true)
   await ui.unmount()
 })
