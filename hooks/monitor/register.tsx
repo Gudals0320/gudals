@@ -30,6 +30,8 @@ const GROUPS_KEY = 'monitorGroups'
 const FOLD_KEEP = 2
 // An island quiet this long goes below the "휴면" line, as a chip.
 const COLD_MS = 120 * MIN
+// Dormant this long, an island moves to the lower shelf.
+const LONG_COLD_MS = 3 * 24 * 60 * MIN
 const FLASH_MS = 900
 // A Box width in cells draws this many pixels to the cell (measured on the desktop).
 const BOX_CELL_PX = 8
@@ -51,6 +53,8 @@ const BOARD_PAD = 8
 // gap under what is above it. The room inside it under its last card. The tint of what can be picked.
 const GROUP_ROOM = 30
 const GROUP_FOOT = 8
+// About how tall a row of dormant chips draws, in pixels.
+const CHIP_ROW_PX = 26
 const PICK_BG = '#1c2422'
 // How tall the desktop draws a plain button with a caption label.
 const BUTTON_PX = 20
@@ -988,7 +992,7 @@ export function registerMonitor(on: On) {
       const head = (
         <Box key="head" flexDirection="row" alignItems="center" gap="xs">
           {picture(dotPiece(island.best))}
-          {isCold && !groupOf.has(island.key) ? (
+          {isCold ? (
             <Button key={`fold-head:${island.key}`} plain onPress={() => void toggleCold($, island.key)}>
               <Text size="footnote" weight="semibold">{island.name}</Text>
             </Button>
@@ -1168,6 +1172,14 @@ export function registerMonitor(on: On) {
       .filter(one => one.members.length > 0)
       .map(one => ({ ...one, rank: Math.min(...one.members.map(island => TIER_ORDER[island.tier])) }))
       .sort((a, b) => a.rank - b.rank)
+    // In a group as outside one, a dormant island is a chip until unfolded: being in a group does
+    // not keep it open.
+    const isFolded = (island: IslandView) => island.tier === 'cold' && !unfolded.has(island.key)
+    const groupHeight = (one: (typeof framedGroups)[number]) =>
+      GROUP_ROOM +
+      GROUP_FOOT +
+      one.members.filter(island => !isFolded(island)).reduce((sum, island) => sum + heightOf(island, BADGE_ROOM.top), 0) +
+      (one.members.some(isFolded) ? CHIP_ROW_PX : 0)
     // Groups stand side by side where the pane is wide enough: two columns, each group under the
     // shorter one, so groups of different heights interlock. Narrow, the second column wraps under.
     const groupColumns = (key: string, list: typeof framedGroups) => {
@@ -1178,7 +1190,7 @@ export function registerMonitor(on: On) {
       for (const one of list) {
         const side = sums[1]! < sums[0]! ? 1 : 0
         columns[side]!.push(one)
-        sums[side]! += GROUP_ROOM + GROUP_FOOT + one.members.reduce((sum, island) => sum + heightOf(island, BADGE_ROOM.top), 0)
+        sums[side]! += groupHeight(one)
       }
       return (
         <Box key={key} flexDirection="row" flexWrap="wrap" alignItems="flex-start" columnGap={COLUMN_GAP}>
@@ -1193,8 +1205,6 @@ export function registerMonitor(on: On) {
     // Groups and the islands outside them on one board: two columns, each block (a group or an
     // island) under the shorter one, so a lone island fills the hole beside a short group instead of
     // running the whole width. Narrow, the second column wraps under the first.
-    const groupHeight = (one: (typeof framedGroups)[number]) =>
-      GROUP_ROOM + GROUP_FOOT + one.members.reduce((sum, island) => sum + heightOf(island, BADGE_ROOM.top), 0)
     const mixedColumns = (list: typeof framedGroups, loose: IslandView[]) => {
       // Groups and islands in one order: by their most pressing island's tier, then the latest activity.
       const blocks = [
@@ -1275,14 +1285,20 @@ export function registerMonitor(on: On) {
           {picture(spacerPiece(1, GROUP_ROOM))}
           <Box position="relative" flexDirection="column" minWidth={0} borderStyle="round" borderColor={C.teal} backgroundColor={takes ? PICK_BG : undefined} paddingX="xs" paddingBottom="xs">
             {label}
-            {/* A group's islands stack in one column, top to bottom. */}
-            {members.map(island => (
+            {/* A group's islands stack in one column, top to bottom; its dormant ones are chips under them. */}
+            {members.filter(island => !isFolded(island)).map(island => (
               <Box key={`grprow:${island.key}`} flexDirection="row">
                 {/* The same room on the left as each card keeps on its right for its mark. */}
                 {picture(spacerPiece(BADGE_ROOM.right, 1))}
                 {placed(island, BADGE_ROOM.top, true)}
               </Box>
             ))}
+            {members.some(isFolded) && (
+              <Box key={`grpchips:${group.id}`} flexDirection="row" flexWrap="wrap" gap="xs" paddingTop="xs">
+                {picture(spacerPiece(BADGE_ROOM.right, 1))}
+                {members.filter(isFolded).map(coldChip)}
+              </Box>
+            )}
             {picture(spacerPiece(1, GROUP_FOOT))}
           </Box>
         </Box>
@@ -1308,6 +1324,22 @@ export function registerMonitor(on: On) {
         </Box>
       )
     }
+    // A shelf of dormant islands: its line, its chips, then the ones unfolded.
+    const dormant = (key: string, label: string, list: IslandView[]) =>
+      list.length === 0
+        ? []
+        : [
+            <Box key={`${key}:divider`} flexDirection="row" alignItems="center" gap="sm" paddingTop="sm" paddingRight="sm">
+              <Box flexShrink={0}>
+                <Text size="caption" color={C.fg3}>{label}</Text>
+              </Box>
+              {dashed('line', C.line2)}
+            </Box>,
+            <Box key={`${key}:chips`} flexDirection="row" flexWrap="wrap" gap="xs" paddingTop="xs" paddingRight="sm">
+              {list.map(coldChip)}
+            </Box>,
+            grid(key, list.filter(island => unfolded.has(island.key)), CARD_GAP_COLD),
+          ]
     const board = [
       ...lifted.map(island => (
         <Box key={`row:${island.key}`} flexDirection="row">
@@ -1323,20 +1355,9 @@ export function registerMonitor(on: On) {
       ...(framedGroups.some(one => one.rank !== TIER_ORDER.hot)
         ? [mixedColumns(framedGroups.filter(one => one.rank !== TIER_ORDER.hot), active)]
         : [grid('active', active, BADGE_ROOM.top)]),
-      cold.length > 0 && (
-        <Box key="divider" flexDirection="row" alignItems="center" gap="sm" paddingTop="sm" paddingRight="sm">
-          <Box flexShrink={0}>
-            <Text size="caption" color={C.fg3}>휴면 · 2시간 이상</Text>
-          </Box>
-          {dashed('line', C.line2)}
-        </Box>
-      ),
-      cold.length > 0 && (
-        <Box key="coldchips" flexDirection="row" flexWrap="wrap" gap="xs" paddingTop="xs" paddingRight="sm">
-          {cold.map(coldChip)}
-        </Box>
-      ),
-      grid('cold', cold.filter(island => unfolded.has(island.key)), CARD_GAP_COLD),
+      // Dormant islands in two shelves: quiet for two hours, then for three days, lower down.
+      ...dormant('cold', '휴면 · 2시간 이상', cold.filter(island => at - island.latest < LONG_COLD_MS)),
+      ...dormant('stale', '휴면 · 3일 이상', cold.filter(island => at - island.latest >= LONG_COLD_MS)),
     ].filter(Boolean)
     const pickTip =
       picking &&

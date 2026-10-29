@@ -110,6 +110,7 @@ const ID = {
   parent: 'local_33333333-3333-4333-8333-333333333333',
   spike: 'local_44444444-4444-4444-8444-444444444444',
   lms: 'local_55555555-5555-4555-8555-555555555555',
+  old: 'local_66666666-6666-4666-8666-666666666666',
 }
 
 const wrapUp = JSON.stringify({
@@ -188,6 +189,7 @@ function stage(on: On, vlsi: { running: boolean; events?: string; isAskClosed?: 
       { sessionId: ID.parent, title: 'AI 협업', cwd: 'C:\\w\\inquiry', isRunning: false, lastActivityAt: iso(9) },
       { sessionId: ID.spike, title: '국내 웹 탐색', cwd: 'C:\\w\\inquiry\\.claude\\worktrees\\kr-web-spike', startedBy: ID.parent, isRunning: false, lastActivityAt: iso(29) },
       { sessionId: ID.lms, title: 'LMS management', cwd: 'C:\\h\\HY-LMS', isRunning: false, lastActivityAt: iso(173) },
+      { sessionId: ID.old, title: '옛 메모', cwd: 'C:\\h\\old-notes', isRunning: false, lastActivityAt: iso(5 * 24 * 60) },
     ]
     const isVlsi = e.args?.session_id === ID.vlsi
     const listed = sessions
@@ -397,6 +399,38 @@ test('a waiting session in a group rises alone, on a card naming its group; the 
   expect((await ui.find({ key: `leave:${SCRATCH}` }))?.text).toBe('빼기')
   // The lifted card cannot be grouped again.
   expect(await ui.find({ key: `group:ask:${ID.ask}` })).toBe(undefined)
+  await ui.unmount()
+})
+
+test('dormant islands sit on two shelves, and in a group they fold into chips too', async ($, on) => {
+  stage(on, { running: true })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
+  const ui = await $.ui.mount(PANE)
+  const press = (key: string) => $.ui.press({ plugin: 'gudals', key })
+  const text = async (pattern: RegExp | string) => (await ui.find({ type: 'Text', text: pattern }))?.text
+  const LEC = 'C:\\w\\lecture-artifact'
+  const LMS = 'C:\\h\\HY-LMS'
+  const OLD = 'C:\\h\\old-notes'
+
+  // Quiet for three hours, then for five days: the five-day one on the lower shelf.
+  expect(await text('휴면 · 2시간 이상')).toBe('휴면 · 2시간 이상')
+  expect(await text('휴면 · 3일 이상')).toBe('휴면 · 3일 이상')
+  const keys = (await ui.findAll({})).map(one => String(one.key ?? ''))
+  expect(keys.indexOf(`fold:${LMS}`) >= 0).toBe(true)
+  expect(keys.indexOf(`fold:${LMS}`) < keys.indexOf(`fold:${OLD}`)).toBe(true)
+
+  // In a group, the dormant island is a chip in the frame, not an open card; it folds and unfolds there.
+  await press(`fold:${LMS}`)
+  await press(`group:${LEC}`)
+  await press(`join:${LMS}`)
+  expect((await ui.find({ type: 'Text', text: /^섬 2 · / }))?.text).toBe('섬 2 · 세션 2')
+  expect((await ui.find({ key: `node:${ID.lms}` })) !== undefined).toBe(true)
+  await press(`fold-head:${LMS}`)
+  expect(await ui.find({ key: `node:${ID.lms}` })).toBe(undefined)
+  expect((await ui.find({ key: `fold:${LMS}` }))?.text).toBe('HY-LMS 1')
+  await press(`fold:${LMS}`)
+  expect((await ui.find({ key: `node:${ID.lms}` })) !== undefined).toBe(true)
   await ui.unmount()
 })
 
