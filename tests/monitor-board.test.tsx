@@ -129,10 +129,10 @@ const wrapUp = JSON.stringify({
 const RUN = `"C:\\Program Files\\Git\\bin\\bash.exe" -c "source /c/x.sh && eval 'npm run eval:run -- --batch evM2 > log 2>&1' < /dev/null"`
 
 // One board's worth of sessions and the machine around them; `vlsi` lets a test move a session
-// and change what its transcript shows.
-function stage(on: On, vlsi: { running: boolean; events?: string; isAskClosed?: boolean; isSuggestion?: boolean }) {
+// and change what its transcript shows; `stored` is what the store holds from the start.
+function stage(on: On, vlsi: { running: boolean; events?: string; isAskClosed?: boolean; isSuggestion?: boolean }, stored?: Record<string, unknown>) {
   const clock = mock.clock(on, { now: NOW })
-  mock.store(on)
+  mock.store(on, stored)
   const sent: { session: string; message: string }[] = []
   const opened: string[] = []
   const world = { titles: new Map<string, string>(), pinned: new Map<string, boolean>(), archived: new Set<string>(), calls: [] as string[] }
@@ -537,6 +537,34 @@ test('a box that only suggests is a report: what was done and the suggestion, an
   await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
   expect(await ui.find({ type: 'Text', text: '✓ 시안 세 개를 그렸습니다.' })).toBe(undefined)
   expect((await ui.find({ key: `open:${ID.ask}` })) !== undefined).toBe(true)
+  await ui.unmount()
+})
+
+test('the board keeps one order: groups by name, then the islands outside them by name, whatever the sessions do', async ($, on) => {
+  const vlsi = { running: true }
+  stage(on, vlsi, {
+    monitorGroups: [
+      { id: 'g-late', name: '나중 묶음', keys: [String.raw`C:\w\lecture-artifact`] },
+      { id: 'g-alpha', name: 'Alpha', keys: [String.raw`C:\h\HY-LMS`] },
+    ],
+  })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
+  const ui = await $.ui.mount(PANE)
+  const order = async () => {
+    const keys = (await ui.findAll({})).map(one => String(one.key ?? ''))
+    return [`open:${ID.ask}`, 'grp:g-alpha', 'grp:g-late', String.raw`new:C:\w\inquiry`].map(key => keys.indexOf(key))
+  }
+  const first = await order()
+  // The waiting session leads; then the groups, Latin before Hangul, so the working session's
+  // group does not jump ahead. (The tree lists the left column, then the right.)
+  expect(first.every(index => index >= 0)).toBe(true)
+  expect(first[0]! < first[1]! && first[1]! < first[2]!).toBe(true)
+
+  // The working session stops: nothing moves.
+  vlsi.running = false
+  await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
+  expect(await order()).toEqual(first)
   await ui.unmount()
 })
 

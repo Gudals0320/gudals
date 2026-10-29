@@ -167,11 +167,10 @@ const SENT_MS = 10 * MIN
 let filter: MonitorFilter = 'all'
 // Dev only: draw the board this many pixels wide, to check a narrow pane.
 let forcedWidth: number | undefined
-// When each island entered its tier, so that within a tier the board moves only when a state
-// changes, not with every step a session takes; and the column each block was first given, so a
-// card that grows does not send its neighbours across.
-const tierEntered = new Map<string, { tier: Tier; at: number }>()
+// The column each block was first given, so a card that grows does not send its neighbours across.
 const sideOf = new Map<string, number>()
+// Names in one fixed order: Latin before Hangul, as a collator places them; numbers by value.
+const byName = new Intl.Collator('en', { numeric: true, sensitivity: 'base' }).compare
 
 // One question of one session: a closed question stays closed until the session asks another.
 export function waitKey(id: string, text: string | undefined, options: string[] | undefined) {
@@ -1225,31 +1224,23 @@ export function registerMonitor(on: On) {
       (chosen === 'wait' && island.rows.some(row => row.state === 'waiting')) ||
       (chosen === 'work' && island.rows.some(row => dotOf(row.state) === 'working')) ||
       (chosen === 'new' && hasUnseen(island))
-    // A waiting session in a grouped island leaves it for the top of the board, on a card of its
-    // own: the question rises alone and the group keeps the place its other sessions give it.
+    // A waiting session leaves its island for the top of the board, on a card of its own: the
+    // question rises alone and its island, in a group or not, keeps its place.
     const asking: IslandView[] = []
     const split = allIslands.flatMap(island => {
-      const lifted = groupOf.has(island.key) ? island.rows.filter(row => row.state === 'waiting') : []
+      const lifted = island.rows.filter(row => row.state === 'waiting')
       if (lifted.length === 0) return [island]
       asking.push(...lifted.map(row => ({ ...islandView(island.key, [row], at), key: `ask:${row.id}`, home: island.key })))
-      // An island left with nothing keeps its place in the group, saying where its question went.
+      // An island left with nothing keeps its place, saying where its question went.
       const rest = island.rows.filter(row => row.state !== 'waiting')
       return [rest.length ? islandView(island.key, rest, at) : { ...island, rows: [], best: 'paused' as const, tier: 'warm' as const, why: '질문은 위에' }]
     })
-    // Within a tier, the island that entered it last comes first; one seen for the first time
-    // counts from its last activity.
-    const entered = (island: IslandView) => {
-      const known = tierEntered.get(island.key)
-      if (known?.tier === island.tier) return known.at
-      const since = known ? at : island.latest
-      tierEntered.set(island.key, { tier: island.tier, at: since })
-      return since
-    }
-    const islands = split.filter(matches).sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier] || entered(b) - entered(a))
+    // The board keeps one order whatever the sessions do: by name, Latin before Hangul, numbers
+    // by value. Only a waiting session leaves it, for the top.
+    const islands = split.filter(matches).sort((a, b) => byName(a.name, b.name) || byName(a.key, b.key))
     const lifted = asking.filter(matches).sort((a, b) => timeOf(a.rows[0]!) - timeOf(b.rows[0]!))
     const free = islands.filter(island => !groupOf.has(island.key))
-    const hot = free.filter(island => island.tier === 'hot')
-    const active = free.filter(island => island.tier === 'live' || island.tier === 'warm')
+    const active = free.filter(island => island.tier !== 'cold')
     const cold = free.filter(island => island.tier === 'cold')
     // About how tall a card draws, in pixels, from what it holds: enough to tell a long card from a
     // short one.
@@ -1328,49 +1319,19 @@ export function registerMonitor(on: On) {
     const framedGroups = groups
       .map(group => ({ group, members: islands.filter(island => group.keys.includes(island.key)) }))
       .filter(one => one.members.length > 0)
-      .map(one => ({ ...one, rank: Math.min(...one.members.map(island => TIER_ORDER[island.tier])) }))
-      // A group moves by its most pressing islands: when the latest of them entered that tier.
-      .map(one => ({ ...one, latest: Math.max(...one.members.filter(island => TIER_ORDER[island.tier] === one.rank).map(entered)) }))
-      .sort((a, b) => a.rank - b.rank || b.latest - a.latest)
+      .sort((a, b) => byName(a.group.name, b.group.name) || byName(a.group.id, b.group.id))
     const groupHeight = (one: (typeof framedGroups)[number]) =>
       GROUP_ROOM + GROUP_FOOT + one.members.reduce((sum, island) => sum + heightOf(island, BADGE_ROOM.top), 0)
-    // Groups stand side by side where the pane is wide enough: two columns, each group under the
-    // shorter one, so groups of different heights interlock. Narrow, the second column wraps under.
-    const groupColumns = (key: string, list: typeof framedGroups) => {
-      if (list.length === 0) return false
-      if (list.length === 1) return groupFrame(list[0]!)
-      const columns = settle(list.map(one => ({ key: `g:${one.group.id}`, height: groupHeight(one), one })))
-      return (
-        <Box key={key} flexDirection="row" flexWrap="wrap" alignItems="flex-start" columnGap={COLUMN_GAP}>
-          {columns.map((column, side) => (
-            <Box key={`${key}:col${side}`} flexDirection="column" width={CARD_MIN_CELLS} minWidth={0} flexGrow={1} flexShrink={1}>
-              {column.map(block => groupFrame(block.one))}
-            </Box>
-          ))}
-        </Box>
-      )
-    }
     // Groups and the islands outside them on one board: two columns, each block (a group or an
     // island) under the shorter one, so a lone island fills the hole beside a short group instead of
-    // running the whole width. Narrow, the second column wraps under the first.
+    // running the whole width. Narrow, the second column wraps under the first. The groups come
+    // first, then the islands outside them, each in name order.
     const mixedColumns = (list: typeof framedGroups, loose: IslandView[]) => {
-      // Groups and islands in one order: by their most pressing island's tier, then by when they entered it.
       const blocks = [
-        ...list.map(one => ({
-          key: `g:${one.group.id}`,
-          rank: one.rank,
-          latest: one.latest,
-          height: groupHeight(one),
-          draw: () => groupFrame(one),
-        })),
-        ...loose.map(island => ({
-          key: `i:${island.key}`,
-          rank: TIER_ORDER[island.tier],
-          latest: entered(island),
-          height: heightOf(island, BADGE_ROOM.top),
-          draw: () => placed(island, BADGE_ROOM.top, true),
-        })),
-      ].sort((a, b) => a.rank - b.rank || b.latest - a.latest)
+        ...list.map(one => ({ key: `g:${one.group.id}`, height: groupHeight(one), draw: () => groupFrame(one) })),
+        ...loose.map(island => ({ key: `i:${island.key}`, height: heightOf(island, BADGE_ROOM.top), draw: () => placed(island, BADGE_ROOM.top, true) })),
+      ]
+      if (blocks.length === 0) return false
       if (blocks.length === 1) return <Box key="mixed" flexDirection="column">{blocks[0]!.draw()}</Box>
       const columns = settle(blocks)
       return (
@@ -1482,15 +1443,7 @@ export function registerMonitor(on: On) {
           {placed(island, BADGE_ROOM.top, true)}
         </Box>
       )),
-      groupColumns('hotgroups', framedGroups.filter(one => one.rank === TIER_ORDER.hot)),
-      ...hot.map(island => (
-        <Box key={`row:${island.key}`} flexDirection="row">
-          {placed(island, BADGE_ROOM.top, true)}
-        </Box>
-      )),
-      ...(framedGroups.some(one => one.rank !== TIER_ORDER.hot)
-        ? [mixedColumns(framedGroups.filter(one => one.rank !== TIER_ORDER.hot), active)]
-        : [grid('active', active, BADGE_ROOM.top)]),
+      framedGroups.length ? mixedColumns(framedGroups, active) : grid('active', active, BADGE_ROOM.top),
       // Dormant islands in two shelves: quiet for two hours, then for three days, lower down.
       ...dormant('cold', '휴면 · 2시간 이상', cold.filter(island => at - island.latest < LONG_COLD_MS)),
       ...dormant('stale', '휴면 · 3일 이상', cold.filter(island => at - island.latest >= LONG_COLD_MS)),
@@ -1537,7 +1490,7 @@ export function registerMonitor(on: On) {
           <Text size="caption">{label}</Text>
         </Button>,
       )
-    const empty = chosen !== 'all' && islands.length === 0
+    const empty = chosen !== 'all' && islands.length === 0 && lifted.length === 0
     const hint = (key: string, what: string) => (
       <Text key={key} size="caption" mono color={C.fg3}>
         <Text color={C.fg2}>{key}</Text> {what}
