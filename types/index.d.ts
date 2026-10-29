@@ -10,7 +10,9 @@ export type Draft =
 export type MonitorState = 'working' | 'background' | 'waiting' | 'idle'
 
 // `question`: a question card or plan approval is open; `choice`: the turn ended on a
-// next-step box with options; `reply`: the last answer asks something; `app`: the engine or
+// next-step box that says the work stops until the person answers (a box that only suggests is a
+// report, MonitorRow.report); `reply`: the last answer asks something (the board shows it as a
+// report too); `app`: the engine or
 // the app reports the session waiting on the person; `blocked`: a hook dropped the person's prompt
 // (transprompt holding it for approval), and nothing of theirs has gone through since.
 export type MonitorWaitKind = 'question' | 'choice' | 'reply' | 'app' | 'blocked'
@@ -40,6 +42,9 @@ export type MonitorRow = {
   waitText?: string
   // What it is doing, or last did, in one line.
   activity?: string
+  // The turn ended and nothing waits on it: its account, first sentence (`recap`), and what it
+  // suggests next (`ask`, with `options`), from the next-step box or a last answer that asks.
+  report?: { recap?: string; ask?: string }
   // A next-step box's options, as their labels, and what each sends when pressed.
   options?: string[]
   answers?: string[]

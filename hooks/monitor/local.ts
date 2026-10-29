@@ -222,8 +222,10 @@ export async function readLocal($: Engine): Promise<Map<string, LocalInfo> | und
   }
 }
 
-// `messages`: what each button sends when pressed, beside its label.
-export type Choice = { ask: string; options: string[]; messages: string[] }
+// A turn's next-step box: its account of the turn (`recap`), and the question it asks, if any (`ask`,
+// empty without one). `messages`: what each button sends when pressed, beside its label.
+// `isBlocked`: the session said its work stops there until the person answers.
+export type Choice = { ask: string; recap: string; options: string[]; messages: string[]; isBlocked: boolean }
 
 // A prompt a hook dropped (transprompt holding a prompt for approval, say): the session waits on
 // the person until a prompt of theirs goes through.
@@ -241,15 +243,17 @@ export function blockOf(line: string): Block | undefined {
   }
 }
 
-// A transcript line's next-step box: the `wrap_up` call's question and its buttons' labels.
+// A transcript line's next-step box: the `wrap_up` call's recap, question and buttons' labels.
 export function choiceOf(line: string): Choice | undefined {
   try {
     const entry = JSON.parse(line) as { type?: unknown; message?: { content?: unknown } }
     if (entry.type !== 'assistant' || !Array.isArray(entry.message?.content)) return undefined
     for (const block of entry.message.content as { type?: unknown; name?: unknown; input?: unknown }[]) {
       if (block.type !== 'tool_use' || block.name !== 'mcp__ccd_turn__wrap_up') continue
-      const input = block.input as { ask?: unknown; actions?: unknown }
-      if (typeof input.ask !== 'string' || !input.ask.trim()) return undefined
+      const input = block.input as { ask?: unknown; recap?: unknown; actions?: unknown; blocked?: unknown }
+      const ask = typeof input.ask === 'string' ? input.ask.trim() : ''
+      const recap = typeof input.recap === 'string' ? input.recap.trim() : ''
+      if (!ask && !recap) return undefined
       const options: string[] = []
       const messages: string[] = []
       for (const one of Array.isArray(input.actions) ? input.actions : []) {
@@ -259,7 +263,7 @@ export function choiceOf(line: string): Choice | undefined {
         options.push(label)
         messages.push(typeof action.message === 'string' && action.message.trim() ? action.message : label)
       }
-      return { ask: input.ask.trim(), options, messages }
+      return { ask, recap, options, messages, isBlocked: input.blocked === true && ask !== '' }
     }
   } catch {
     return undefined

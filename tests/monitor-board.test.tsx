@@ -120,7 +120,7 @@ const wrapUp = JSON.stringify({
       {
         type: 'tool_use',
         name: 'mcp__ccd_turn__wrap_up',
-        input: { ask: '어느 시안으로 갈까요?', actions: [{ label: 'A + C피크', message: 'A + C피크로 가자.' }, { label: '다른 걸로' }] },
+        input: { recap: '시안 세 개를 그렸습니다.', ask: '어느 시안으로 갈까요?', blocked: true, actions: [{ label: 'A + C피크', message: 'A + C피크로 가자.' }, { label: '다른 걸로' }] },
       },
     ],
   },
@@ -130,7 +130,7 @@ const RUN = `"C:\\Program Files\\Git\\bin\\bash.exe" -c "source /c/x.sh && eval 
 
 // One board's worth of sessions and the machine around them; `vlsi` lets a test move a session
 // and change what its transcript shows.
-function stage(on: On, vlsi: { running: boolean; events?: string; isAskClosed?: boolean }) {
+function stage(on: On, vlsi: { running: boolean; events?: string; isAskClosed?: boolean; isSuggestion?: boolean }) {
   const clock = mock.clock(on, { now: NOW })
   mock.store(on)
   const sent: { session: string; message: string }[] = []
@@ -155,7 +155,7 @@ function stage(on: On, vlsi: { running: boolean; events?: string; isAskClosed?: 
     if (argv[0] === 'cmd.exe') opened.push(String(argv[4]))
     const script = String(argv[4] ?? '')
     const stdout = script.includes('Select-String')
-      ? script.includes('cli-ask') && !vlsi.isAskClosed ? wrapUp : ''
+      ? script.includes('cli-ask') && !vlsi.isAskClosed ? (vlsi.isSuggestion ? wrapUp.replace('"blocked":true,', '') : wrapUp) : ''
       : JSON.stringify([
           { p: 1, pp: 0, n: 'claude.exe' },
           { p: 2, pp: 0, n: 'claude.exe' },
@@ -515,6 +515,28 @@ test('a question closed on the board stops waiting, through a refresh, and the f
   expect((await ui.find({ key: `open:${ID.vlsi}` })) !== undefined).toBe(true)
   expect(await ui.find({ key: `open:${ID.ask}` })).toBe(undefined)
   await $.ui.press({ plugin: 'gudals', key: 'filter:all' })
+  await ui.unmount()
+})
+
+test('a box that only suggests is a report: what was done and the suggestion, answerable, not lifted, closable', async ($, on) => {
+  const { sent } = stage(on, { running: true, isSuggestion: true })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
+  const ui = await $.ui.mount(PANE)
+
+  // Nothing waits: the header counts no waiting session, and the session's card shows its report.
+  expect((await ui.findAll({ type: 'Svg' })).some(one => String(one.props.alt) === '대기 0')).toBe(true)
+  expect((await ui.find({ type: 'Text', text: '✓ 시안 세 개를 그렸습니다.' }))?.text).toBe('✓ 시안 세 개를 그렸습니다.')
+  expect((await ui.find({ type: 'Text', text: '→ 어느 시안으로 갈까요?' }))?.text).toBe('→ 어느 시안으로 갈까요?')
+  // The suggestion's buttons still answer it.
+  await $.ui.press({ plugin: 'gudals', key: `answer:${ID.ask}:0` })
+  expect(sent).toEqual([{ session: ID.ask, message: 'A + C피크로 가자.' }])
+
+  // Closed, it stays closed through a refresh.
+  await $.ui.press({ plugin: 'gudals', key: `dismiss:${ID.ask}` })
+  await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
+  expect(await ui.find({ type: 'Text', text: '✓ 시안 세 개를 그렸습니다.' })).toBe(undefined)
+  expect((await ui.find({ key: `open:${ID.ask}` })) !== undefined).toBe(true)
   await ui.unmount()
 })
 

@@ -180,6 +180,10 @@ export function waitKey(id: string, text: string | undefined, options: string[] 
   return `${id}:${hash.toString(36)}`
 }
 
+// What a row puts to the person, a question or a report: what closing or answering it is keyed by.
+const askKey = (row: MonitorRow) =>
+  waitKey(row.id, row.waitText ?? row.report?.recap ?? row.report?.ask, row.waitKind === 'choice' || row.report ? row.options : undefined)
+
 const dotOf = (state: MonitorState): DotState =>
   state === 'waiting' ? 'waiting' : state === 'idle' ? 'paused' : state === 'background' ? 'background' : 'working'
 // A row's dot: as its state's, but a prompt a hook dropped is its own, red.
@@ -201,6 +205,9 @@ const FOLDERLESS = '폴더 없음'
 const islandOf = (cwd: string) => (folderName(cwd) === FOLDERLESS ? FOLDERLESS : repoOf(cwd))
 
 const short = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
+
+// A recap's first sentence, for the one line a report takes under its session.
+export const firstSentence = (text: string) => short((text.split(/(?<=[.!?。])\s+/)[0] ?? text).trim(), 100)
 
 // "지금", "N분", "N시간", "N일": one unit, rounded down; "–" where the time is not known.
 function age(at: number, since: number | null) {
@@ -270,14 +277,30 @@ async function readRows($: Engine, at: number): Promise<MonitorRow[]> {
     // The engine says it waits on the person: a permission prompt, a question card, a dialog.
     if (info?.status === 'waiting' && verdict.state !== 'waiting') verdict = { state: 'waiting', waitKind: 'app', waitText: '입력을 기다리는 중' }
     const found = choices.get(one.sessionId)
-    // A prompt a hook dropped waits on the person as a next-step box does, shown in red.
-    const choice = found && 'ask' in found ? found : undefined
+    // A prompt a hook dropped waits on the person, shown in red.
+    const choice = found && !('blocked' in found) ? found : undefined
     if (found && 'blocked' in found && !runningOf(one)) verdict = { state: 'waiting', waitKind: 'blocked', waitText: found.blocked }
-    if (choice && !runningOf(one)) verdict = { state: 'waiting', waitKind: 'choice', waitText: choice.ask }
-    // A question the person closed on the board no longer waits.
-    if (verdict.state === 'waiting' && dismissed.has(waitKey(one.sessionId, verdict.waitText, verdict.waitKind === 'choice' ? choice?.options : undefined))) {
+    // A next-step box waits on the person only when the session said its work stops there. Most
+    // boxes only suggest a next step, and a turn that ends on one, or on an answer that asks
+    // something, is a report: the board shows what was done and the suggestion, without lifting it.
+    let report: MonitorRow['report']
+    if (choice && !runningOf(one)) {
+      if (choice.isBlocked) verdict = { state: 'waiting', waitKind: 'choice', waitText: choice.ask }
+      else if (verdict.state !== 'waiting' || verdict.waitKind === 'reply') {
+        report = { ...(choice.recap && { recap: firstSentence(choice.recap) }), ...(choice.ask && { ask: choice.ask }) }
+        if (verdict.state === 'waiting') verdict = { state: 'idle' }
+      }
+    }
+    if (verdict.state === 'waiting' && verdict.waitKind === 'reply') {
+      report = { ask: verdict.waitText }
       verdict = { state: 'idle' }
     }
+    const options = choice?.options.length && (verdict.waitKind === 'choice' || report?.ask) ? choice.options : undefined
+    // A question or a report the person closed on the board is gone.
+    if (verdict.state === 'waiting' && dismissed.has(waitKey(one.sessionId, verdict.waitText, verdict.waitKind === 'choice' ? options : undefined))) {
+      verdict = { state: 'idle' }
+    }
+    if (report && dismissed.has(waitKey(one.sessionId, report.recap ?? report.ask, options))) report = undefined
     const seen = observed[one.sessionId]
     const lastStep = seen?.steps.at(-1)
     const changedNow = seen !== undefined && lastStep?.state !== verdict.state
@@ -303,8 +326,9 @@ async function readRows($: Engine, at: number): Promise<MonitorRow[]> {
     if (one.pinned) row.pinned = true
     if (verdict.waitKind) row.waitKind = verdict.waitKind
     if (verdict.waitText) row.waitText = verdict.waitText
-    if (choice?.options.length && verdict.waitKind === 'choice') {
-      row.options = choice.options
+    if (report) row.report = report
+    if (options && choice && (verdict.state === 'waiting' || report)) {
+      row.options = options
       row.answers = choice.messages
     }
     if (info && info.tasks.length > 0 && (verdict.state === 'working' || verdict.state === 'background')) row.tasks = info.tasks
@@ -358,8 +382,9 @@ export const unseenKey = (row: MonitorRow, homes: Map<string, string>) => {
 
 async function publish($: Engine, at: number, rows: MonitorRow[], error?: string) {
   for (const [key, one] of flashes) if (one.until <= at) flashes.delete(key)
-  // A sent answer holds while its session still waits on that same question, for a while.
-  const asking = new Map(rows.filter(row => row.state === 'waiting').map(row => [row.id, waitKey(row.id, row.waitText, row.options)]))
+  // A sent answer holds while its session still waits on that same question or shows that same
+  // report, for a while.
+  const asking = new Map(rows.filter(row => row.state === 'waiting' || row.report).map(row => [row.id, askKey(row)]))
   for (const [id, one] of sent) if (asking.get(id) !== one.key || at - one.at > SENT_MS) sent.delete(id)
   const next: MonitorView = {
     at,
@@ -389,16 +414,17 @@ async function publish($: Engine, at: number, rows: MonitorRow[], error?: string
 // What the board last drew, to tell a refresh that changes something from one that does not.
 let lastShown: string | undefined
 
-// Closes a waiting session's question on the board: it stays closed until the session asks again.
+// Closes a waiting session's question, or a session's report, on the board: it stays closed until
+// the session asks again or ends another turn.
 async function dismiss($: Engine, row: MonitorRow) {
-  dismissed.add(waitKey(row.id, row.waitText, row.waitKind === 'choice' ? row.options : undefined))
+  dismissed.add(askKey(row))
   await $.store.set(DISMISSED_KEY, [...dismissed].slice(-200))
   const current = await read($, view)
   if (!current) return
   const rows = current.rows.map(one => {
     if (one.id !== row.id) return one
-    const { options: _options, answers: _answers, waitKind: _kind, waitText: _text, ...rest } = one
-    return { ...rest, state: 'idle' as const }
+    const { options: _options, answers: _answers, waitKind: _kind, waitText: _text, report: _report, ...rest } = one
+    return { ...rest, state: one.state === 'waiting' ? ('idle' as const) : one.state }
   })
   await publish($, current.at, rows, current.error)
 }
@@ -649,7 +675,7 @@ async function answer($: Engine, row: MonitorRow, index: number) {
       $.ui.toast(`답을 못 보냄: ${short(text, 80)}`)
       return
     }
-    sent.set(row.id, { key: waitKey(row.id, row.waitText, row.options), label, at: await $.clock.now() })
+    sent.set(row.id, { key: askKey(row), label, at: await $.clock.now() })
     $.ui.toast(`${short(row.title, 24)}에 "${short(label, 24)}" 보냄`)
     await settleFlash($)
   } catch (err) {
@@ -788,7 +814,7 @@ export function registerMonitor(on: On) {
     const current = await read($, view)
     const brief = current?.rows
       .filter(row => row.state !== 'idle')
-      .map(row => ({ title: row.title, state: row.state, waitKind: row.waitKind, waitText: row.waitText, options: row.options, activity: row.activity }))
+      .map(row => ({ title: row.title, state: row.state, waitKind: row.waitKind, waitText: row.waitText, options: row.options, report: row.report, activity: row.activity }))
     return { result: JSON.stringify({ columns: lastColumns, at: current?.at, error: current?.error, unseen: current?.unseen, rows: brief }, null, 1) }
   })
 
@@ -945,6 +971,41 @@ export function registerMonitor(on: On) {
         </Box>,
       ]
       if (current.menu === row.id) lines.push(sessionMenu(row, depth, under))
+      const closer = (
+        <Button key={`dismiss:${row.id}`} plain dimColor onPress={() => void dismiss($, row)}>
+          <Text size="caption">✕</Text>
+        </Button>
+      )
+      // The buttons that answer a question or take up a suggestion; an answer sent from the board
+      // shows in place of them until the session moves on.
+      const answers = (accent: string) => {
+        const answered = current.sent?.[row.id]
+        if (answered) {
+          return [
+            <Box key={`sent:${row.id}`} flexDirection="row" alignItems="center">
+              {rail(19)}
+              {fill(<Text size="caption" color={C.fg2} wrap="truncate-end">{`"${answered}" 보냄 · 세션의 답을 기다리는 중`}</Text>)}
+            </Box>,
+          ]
+        }
+        if (!row.options?.length) return []
+        return [
+          <Box key={`acts:${row.id}`} flexDirection="row" alignItems="center">
+            {rail(30)}
+            <Box flexDirection="row" flexWrap="wrap" gap="xs" alignItems="center">
+              {row.options.slice(0, 9).map((label, i) =>
+                framed(
+                  `answerbox:${row.id}:${i}`,
+                  i === 0 ? { border: accent, stroke: 2 } : { border: C.line2 },
+                  <Button key={`answer:${row.id}:${i}`} plain onPress={() => void answer($, row, i)}>
+                    <Text size="caption" weight={i === 0 ? 'semibold' : 'regular'}>{`${i + 1} ${label}`}</Text>
+                  </Button>,
+                ),
+              )}
+            </Box>
+          </Box>,
+        ]
+      }
       if (row.state === 'waiting') {
         lines.push(
           <Box key={`q:${row.id}`} flexDirection="row" alignItems="center">
@@ -954,36 +1015,32 @@ export function registerMonitor(on: On) {
                 {state === 'blocked' ? `훅이 프롬프트를 막음 · ${row.waitText}` : (row.waitText ?? '입력을 기다리는 중')}
               </Text>,
             )}
-            <Button key={`dismiss:${row.id}`} plain dimColor onPress={() => void dismiss($, row)}>
-              <Text size="caption">✕</Text>
-            </Button>
+            {closer}
+          </Box>,
+          ...answers(C.amber),
+        )
+      } else if (row.report) {
+        // A report: what the turn did, then what it suggests. Bright while its island has a change
+        // not yet looked at, dim after.
+        const fresh = homeKey(island) === FOLDERLESS ? seenless.has(keyOf(row)) : hasUnseen(island)
+        lines.push(
+          <Box key={`report:${row.id}`} flexDirection="row" alignItems="center">
+            {rail(19)}
+            {fill(
+              <Text size="caption" color={fresh ? C.teal : C.fg3} wrap="truncate-end">
+                {`✓ ${row.report.recap ?? '턴을 마침'}`}
+              </Text>,
+            )}
+            {closer}
           </Box>,
         )
-        // An answer sent from the board shows in place of the buttons until the session moves on.
-        const answered = current.sent?.[row.id]
-        if (answered) {
+        if (row.report.ask) {
           lines.push(
-            <Box key={`sent:${row.id}`} flexDirection="row" alignItems="center">
+            <Box key={`suggest:${row.id}`} flexDirection="row" alignItems="center">
               {rail(19)}
-              {fill(<Text size="caption" color={C.fg2} wrap="truncate-end">{`"${answered}" 보냄 · 세션의 답을 기다리는 중`}</Text>)}
+              {fill(<Text size="caption" color={fresh ? C.fg2 : C.fg3} wrap="truncate-end">{`→ ${row.report.ask}`}</Text>)}
             </Box>,
-          )
-        } else if (row.options?.length) {
-          lines.push(
-            <Box key={`acts:${row.id}`} flexDirection="row" alignItems="center">
-              {rail(30)}
-              <Box flexDirection="row" flexWrap="wrap" gap="xs" alignItems="center">
-                {row.options.slice(0, 9).map((label, i) =>
-                  framed(
-                    `answerbox:${row.id}:${i}`,
-                    i === 0 ? { border: C.amber, stroke: 2 } : { border: C.line2 },
-                    <Button key={`answer:${row.id}:${i}`} plain onPress={() => void answer($, row, i)}>
-                      <Text size="caption" weight={i === 0 ? 'semibold' : 'regular'}>{`${i + 1} ${label}`}</Text>
-                    </Button>,
-                  ),
-                )}
-              </Box>
-            </Box>,
+            ...answers(fresh ? C.teal : C.line2),
           )
         }
       }
@@ -1198,7 +1255,8 @@ export function registerMonitor(on: On) {
     // short one.
     const heightOf = (island: IslandView, room: number) => {
       const rowsOf = (row: MonitorRow) => {
-        const asks = row.state === 'waiting' ? 19 + (row.options?.length ? 30 : 0) : 0
+        const buttons = row.options?.length ? 30 : 0
+        const asks = row.state === 'waiting' ? 19 + buttons : row.report ? 19 + (row.report.ask ? 19 + buttons : 0) : 0
         const state = rowDot(row)
         const shells = state === 'working' || state === 'background' ? (row.tasks?.length ?? 0) * 22 : 0
         return NODE_PX + asks + shells

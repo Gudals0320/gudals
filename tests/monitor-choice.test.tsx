@@ -21,13 +21,19 @@ test('choiceOf reads the question and the button labels', () => {
   })
   expect(choiceOf(line)).toEqual({
     ask: '어느 버전으로 구현할까요?',
+    recap: '세 버전을 그렸습니다.',
     options: ['2 활동 섬', '다른 버전', 'commit'],
     messages: ['2번으로 해 줘.', '다른 버전', 'commit'],
+    isBlocked: false,
   })
+  // Only a question can stop the work.
+  expect(choiceOf(wrapUpLine({ recap: '막혔습니다.', ask: '어느 쪽?', blocked: true }))?.isBlocked).toBe(true)
+  expect(choiceOf(wrapUpLine({ recap: '끝났습니다.', blocked: true }))?.isBlocked).toBe(false)
 })
 
-test('choiceOf ignores a box with no question, other tools, and other entries', () => {
-  expect(choiceOf(wrapUpLine({ recap: '끝났습니다.' }))).toBe(undefined)
+test('choiceOf reads a box with only a recap, and ignores other tools and other entries', () => {
+  expect(choiceOf(wrapUpLine({ recap: '끝났습니다.' }))).toEqual({ ask: '', recap: '끝났습니다.', options: [], messages: [], isBlocked: false })
+  expect(choiceOf(wrapUpLine({}))).toBe(undefined)
   expect(choiceOf(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: {} }] } }))).toBe(undefined)
   expect(choiceOf(JSON.stringify({ type: 'api-request-blob', message: {} }))).toBe(undefined)
   expect(choiceOf('not json')).toBe(undefined)
