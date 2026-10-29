@@ -21,6 +21,11 @@ const PROBE_LIMIT = 20
 // Every session the app lists, not the latest few: an older session belongs on the board too, as a
 // dormant chip. Only recent ones are read any further (PROBE_LIMIT, the 48-hour scan).
 const LIST_LIMIT = 500
+// The whole list outgrows Claude Code's output limit, and an answer past it comes back as a note
+// naming the file it went to. So a refresh asks for the latest sessions only, well inside the
+// limit, and the whole list is read from that file when the board opens and every few minutes.
+const RECENT_LIMIT = 40
+const FULL_EVERY_MS = 10 * 60_000
 const OBSERVED_KEY = 'monitorObserved'
 const UNSEEN_KEY = 'monitorUnseen'
 const OPEN_COLD_KEY = 'monitorOpenCold'
@@ -81,6 +86,51 @@ export function parseSessionList(text: string): SessionJson[] {
   if (head.startsWith('[')) return JSON.parse(head) as SessionJson[]
   if (head.startsWith('No other sessions found')) return []
   throw new Error(`앱 응답이 목록이 아님 · ${short(head || '(빈 응답)', 160)}`)
+}
+
+// Where Claude Code put an answer too long to hand back.
+export const savedOutputPath = (text: string) => /Output has been saved to\s+(.+?\.(?:txt|json))\b/.exec(text)?.[1]
+
+// The latest sessions first, then every other one the whole list last held. A session read now
+// replaces what the whole list said of it; one the whole list never held joins it. The latest are
+// the `limit` newest by activity, so one held that is newer than the oldest of them, yet missing,
+// was archived or removed; with fewer than `limit` listed, every session was.
+export function mergeSessions(recent: SessionJson[], all: Map<string, SessionJson>, limit: number): SessionJson[] {
+  const activityOf = (one: SessionJson) => (one.lastActivityAt ? Date.parse(one.lastActivityAt) : 0)
+  const floor = recent.length < limit ? -Infinity : Math.min(...recent.map(activityOf))
+  const listed = new Set(recent.map(one => one.sessionId))
+  for (const [id, one] of all) if (!listed.has(id) && activityOf(one) > floor) all.delete(id)
+  for (const one of recent) all.set(one.sessionId, one)
+  return [...recent, ...[...all.values()].filter(one => !listed.has(one.sessionId))]
+}
+
+let allSessions: Map<string, SessionJson> | undefined
+let allSessionsAt = -Infinity
+
+// The whole list, from the file Claude Code wrote it to when it ran long; the file goes once read,
+// as the board would leave one every few minutes.
+async function readAllSessions($: Engine) {
+  const text = await callText($, 'list_sessions', { limit: LIST_LIMIT })
+  const path = savedOutputPath(text)
+  if (!path) return parseSessionList(text)
+  const list = parseSessionList(String(await $.fs.read(path)))
+  if (/[\\/]tool-results[\\/]mcp-ccd_session_mgmt-list_sessions-\d+\.txt$/.test(path)) {
+    const literal = path.replaceAll("'", "''")
+    await $.process.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', `Remove-Item -LiteralPath '${literal}'`], { timeoutMs: 10_000 }).catch(() => undefined)
+  }
+  return list
+}
+
+async function readSessions($: Engine, at: number) {
+  if (at - allSessionsAt >= FULL_EVERY_MS) {
+    // A whole list that fails keeps the one before until the next try, not the next refresh: a
+    // try can leave a file behind.
+    allSessionsAt = at
+    const all = await readAllSessions($).catch(() => undefined)
+    if (all) allSessions = new Map(all.map(one => [one.sessionId, one]))
+  }
+  const recent = parseSessionList(await callText($, 'list_sessions', { limit: RECENT_LIMIT }))
+  return mergeSessions(recent, (allSessions ??= new Map()), RECENT_LIMIT)
 }
 
 // A session whose last activity has not moved keeps the probe taken at that activity.
@@ -180,8 +230,7 @@ async function probeOf($: Engine, id: string, lastActivityAt: number, isRunning:
 }
 
 async function readRows($: Engine, at: number): Promise<MonitorRow[]> {
-  const [listText, local] = await Promise.all([callText($, 'list_sessions', { limit: LIST_LIMIT }), readLocal($)])
-  const list = parseSessionList(listText)
+  const [list, local] = await Promise.all([readSessions($, at), readLocal($)])
   const activityOf = (one: SessionJson) => (one.lastActivityAt ? Date.parse(one.lastActivityAt) : 0)
   // The engine's own busy flag, where this machine gives it, beats the app's.
   const runningOf = (one: SessionJson) => local?.get(one.sessionId)?.isBusy ?? one.isRunning ?? false

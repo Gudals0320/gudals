@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { buildIslands, changedIslands, parseSessionList } from '../hooks/monitor/register'
+import { buildIslands, changedIslands, mergeSessions, parseSessionList, savedOutputPath } from '../hooks/monitor/register'
 import { DASH_TILE_PX, dashTilePiece, escapeHtml, glintPiece, gutterPiece, gutterWidth, lineCount } from '../hooks/monitor/pieces'
 import type { MonitorRow } from '../types'
 
@@ -525,4 +525,26 @@ test('the session list reads past a note the app adds, and shows the app words w
   expect(parseSessionList('No other sessions found.')).toEqual([])
   expect(() => parseSessionList('Error: session manager is not ready')).toThrow('앱 응답이 목록이 아님 · Error: session manager is not ready')
   expect(() => parseSessionList('')).toThrow('(빈 응답)')
+})
+
+test('a list too long to hand back is read from the file it went to, and the latest sessions lead', () => {
+  const path = String.raw`C:\Users\me\.claude\projects\p\s\tool-results\mcp-ccd_session_mgmt-list_sessions-17.txt`
+  const note = `Error: result (50,908 characters across 1,349 lines) exceeds maximum allowed tokens. Output has been saved to ${path}.\nUse offset and limit to read it.`
+  expect(savedOutputPath(note)).toBe(path)
+  expect(savedOutputPath('[]')).toBe(undefined)
+
+  const at = (min: number) => new Date(NOW - min * MIN).toISOString()
+  const all = new Map([
+    ['a', { sessionId: 'a', title: 'A old', lastActivityAt: at(300) }],
+    ['b', { sessionId: 'b', title: 'B', lastActivityAt: at(500) }],
+    ['gone', { sessionId: 'gone', title: 'archived', lastActivityAt: at(20) }],
+  ])
+  // Two listed of two asked: 'b' is older than the oldest listed, so it is only past the latest
+  // few; 'gone' is newer, so it was archived.
+  const merged = mergeSessions([{ sessionId: 'c', title: 'C', lastActivityAt: at(10) }, { sessionId: 'a', title: 'A new', lastActivityAt: at(30) }], all, 2)
+  expect(merged.map(one => one.title)).toEqual(['C', 'A new', 'B'])
+  // A session read once stays when it drops out of the latest few.
+  expect(mergeSessions([{ sessionId: 'd', lastActivityAt: at(1) }, { sessionId: 'c', lastActivityAt: at(10) }], all, 2).map(one => one.sessionId)).toEqual(['d', 'c', 'a', 'b'])
+  // Fewer listed than asked: the app listed every session, so the rest are gone.
+  expect(mergeSessions([{ sessionId: 'd', lastActivityAt: at(1) }], all, 2).map(one => one.sessionId)).toEqual(['d'])
 })
