@@ -73,6 +73,16 @@ type SessionJson = {
   pinned?: boolean
 }
 
+// The app's session list is JSON, at times followed by a note after a blank line. Plain words
+// come back when there is nothing to list, or when the app fails without marking the answer an
+// error; those words are what the board shows, not a JSON parse error.
+export function parseSessionList(text: string): SessionJson[] {
+  const head = text.split('\n\n')[0]?.trim() ?? ''
+  if (head.startsWith('[')) return JSON.parse(head) as SessionJson[]
+  if (head.startsWith('No other sessions found')) return []
+  throw new Error(`앱 응답이 목록이 아님 · ${short(head || '(빈 응답)', 160)}`)
+}
+
 // A session whose last activity has not moved keeps the probe taken at that activity.
 const probes = new Map<string, { lastActivityAt: number; probe: MonitorProbe }>()
 // What the person did on the board, kept across refreshes: changes not yet looked at, dormant
@@ -171,7 +181,7 @@ async function probeOf($: Engine, id: string, lastActivityAt: number, isRunning:
 
 async function readRows($: Engine, at: number): Promise<MonitorRow[]> {
   const [listText, local] = await Promise.all([callText($, 'list_sessions', { limit: LIST_LIMIT }), readLocal($)])
-  const list = JSON.parse(listText) as SessionJson[]
+  const list = parseSessionList(listText)
   const activityOf = (one: SessionJson) => (one.lastActivityAt ? Date.parse(one.lastActivityAt) : 0)
   // The engine's own busy flag, where this machine gives it, beats the app's.
   const runningOf = (one: SessionJson) => local?.get(one.sessionId)?.isBusy ?? one.isRunning ?? false
@@ -370,14 +380,16 @@ async function readAndPublish($: Engine, cause: string) {
   const at = await $.clock.now()
   const began = Date.now()
   resetCost()
+  let error: string | undefined
   try {
-    await readAndPublishAt($, at)
+    error = await readAndPublishAt($, at)
   } finally {
-    void noteRefresh($, at, `${cause} ${Date.now() - began}ms · ${costLine()}`)
+    void noteRefresh($, at, `${cause} ${Date.now() - began}ms · ${costLine()}${error ? ` · 실패 ${error}` : ''}`)
   }
 }
 
-async function readAndPublishAt($: Engine, at: number) {
+// Answers what went wrong, when the list could not be read.
+async function readAndPublishAt($: Engine, at: number): Promise<string | undefined> {
   const prev = (await read($, view))?.rows
   try {
     const rows = isDemo ? demoRows(at) : await readRows($, at)
@@ -398,7 +410,9 @@ async function readAndPublishAt($: Engine, at: number) {
     const head = waiting[0] ? ` · ${short(waiting[0].title, 24)} 대기 중` : ''
     $.ui.status(`Monitor · 대기 ${waiting.length} · 실행 ${running.length}${head}`)
   } catch (err) {
-    await publish($, at, prev ?? [], String(err).slice(0, 200))
+    const error = (err instanceof Error ? err.message : String(err)).slice(0, 200)
+    await publish($, at, prev ?? [], error)
+    return error
   }
 }
 

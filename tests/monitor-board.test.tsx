@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { buildIslands, changedIslands } from '../hooks/monitor/register'
+import { buildIslands, changedIslands, parseSessionList } from '../hooks/monitor/register'
 import { DASH_TILE_PX, dashTilePiece, escapeHtml, glintPiece, gutterPiece, gutterWidth, lineCount } from '../hooks/monitor/pieces'
 import type { MonitorRow } from '../types'
 
@@ -516,4 +516,13 @@ test('a question closed on the board stops waiting, through a refresh, and the f
   expect(await ui.find({ key: `open:${ID.ask}` })).toBe(undefined)
   await $.ui.press({ plugin: 'gudals', key: 'filter:all' })
   await ui.unmount()
+})
+
+test('the session list reads past a note the app adds, and shows the app words when it is no list', () => {
+  const list = JSON.stringify([{ sessionId: 'a', title: 'A' }], null, 2)
+  expect(parseSessionList(list)).toEqual([{ sessionId: 'a', title: 'A' }])
+  expect(parseSessionList(`${list}\n\nThis session runs elsewhere.`)).toEqual([{ sessionId: 'a', title: 'A' }])
+  expect(parseSessionList('No other sessions found.')).toEqual([])
+  expect(() => parseSessionList('Error: session manager is not ready')).toThrow('앱 응답이 목록이 아님 · Error: session manager is not ready')
+  expect(() => parseSessionList('')).toThrow('(빈 응답)')
 })
