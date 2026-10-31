@@ -1,0 +1,1 @@
+legacy/members.dat 에서 활성 회원의 이름과 포인트를 뽑아서 out/members.csv (헤더 name,points) 로 만들어 줘. 포맷 문서는 없어. 확인용으로 아는 건 README에 있어. 활성 회원 37명, 홍길동 1200점.
