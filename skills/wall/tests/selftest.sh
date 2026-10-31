@@ -35,7 +35,7 @@ echo "== 없는 파일에 넣기 =="
 expect 0 "파일이 없으면 만든다" node "$BLOCK" upsert wall "$CONTENT" --file "$F"
 [ -f "$F" ] && ok "CLAUDE.md 가 생겼다" || bad "CLAUDE.md 가 없다"
 count "<!-- gudals:wall -->" "$F" 1 "블록이 하나"
-has "## 막혔을 때" "$F" "블록 내용이 들어갔다"
+has "## 벽 앞에서" "$F" "블록 내용이 들어갔다"
 rm "$F"
 
 echo "== 기존 내용 보존 =="
