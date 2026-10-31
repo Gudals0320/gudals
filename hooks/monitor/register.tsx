@@ -5,7 +5,7 @@ import type { MonitorFilter, MonitorFlash, MonitorGroup, MonitorObserved, Monito
 import { MIN, classify, describeActivity, newChatLink, parseEvents, sessionLink } from './classify'
 import { costLine, describeBackground, readChoice, readLocal, resetCost, timed } from './local'
 import type { Block, Choice } from './local'
-import { C, NODE_PX, badgePiece, pinPiece, cardCornerPiece, cardSidePiece, dashTilePiece, dotPiece, elbowPiece, frameLineSource, frameSide, glintPiece, gutterPiece, newDotPiece, pillPiece, railPiece, spacerPiece, worktreePiece } from './pieces'
+import { C, NODE_PX, badgePiece, pulsePiece, pinPiece, cardCornerPiece, cardSidePiece, dashTilePiece, dotPiece, elbowPiece, frameLineSource, frameSide, glintPiece, gutterPiece, newDotPiece, pillPiece, railPiece, spacerPiece, worktreePiece } from './pieces'
 import type { DotState, Frame, Piece } from './pieces'
 
 // The monitor pulls: it reads the app's session list and each session's recent transcript when it
@@ -29,6 +29,7 @@ const FULL_EVERY_MS = 10 * 60_000
 const OBSERVED_KEY = 'monitorObserved'
 const UNSEEN_KEY = 'monitorUnseen'
 const OPEN_COLD_KEY = 'monitorOpenCold'
+const FOLDED_KEY = 'monitorFolded'
 const DISMISSED_KEY = 'monitorDismissed'
 const GROUPS_KEY = 'monitorGroups'
 // A session's stopped sub-sessions beyond this many fold into one "+ N" line.
@@ -136,9 +137,10 @@ async function readSessions($: Engine, at: number) {
 // A session whose last activity has not moved keeps the probe taken at that activity.
 const probes = new Map<string, { lastActivityAt: number; probe: MonitorProbe }>()
 // What the person did on the board, kept across refreshes: changes not yet looked at, dormant
-// islands unfolded, flashes still running.
+// islands unfolded and active ones folded (each against its default), flashes still running.
 let unseen = new Set<string>()
 let openCold = new Set<string>()
+let foldedWarm = new Set<string>()
 // Sessions whose stopped sub-sessions the person unfolded, by session id.
 const openFold = new Set<string>()
 // Islands the person framed together; kept across sessions.
@@ -391,6 +393,7 @@ async function publish($: Engine, at: number, rows: MonitorRow[], error?: string
     unseen: [...unseen],
     flash: Object.fromEntries([...flashes].map(([key, one]) => [key, one.kind])),
     openCold: [...openCold],
+    folded: [...foldedWarm],
     openFold: [...openFold],
     groups,
     filter,
@@ -503,10 +506,15 @@ async function markSeen($: Engine, key?: string) {
   await settleFlash($)
 }
 
-async function toggleCold($: Engine, key: string) {
-  if (openCold.has(key)) openCold.delete(key)
-  else openCold.add(key)
+// Folds or unfolds an island's card against its default: a dormant island starts folded, an
+// active one open. A choice made on one side of the line is forgotten on the other.
+async function toggleIsland($: Engine, key: string, isCold: boolean) {
+  const [mine, other] = isCold ? [openCold, foldedWarm] : [foldedWarm, openCold]
+  if (mine.has(key)) mine.delete(key)
+  else mine.add(key)
+  other.delete(key)
   await $.store.set(OPEN_COLD_KEY, [...openCold])
+  await $.store.set(FOLDED_KEY, [...foldedWarm])
   await settleFlash($)
 }
 
@@ -724,6 +732,7 @@ async function restore($: Engine) {
   const closed = (await $.store.get(DISMISSED_KEY)) as string[] | undefined
   unseen = new Set(saved ?? [])
   openCold = new Set(unfolded ?? [])
+  foldedWarm = new Set(((await $.store.get(FOLDED_KEY)) as string[] | undefined) ?? [])
   dismissed = new Set(closed ?? [])
   groups = ((await $.store.get(GROUPS_KEY)) as MonitorGroup[] | undefined) ?? []
 }
@@ -735,9 +744,7 @@ type Tier = 'hot' | 'live' | 'warm' | 'cold'
 const TIER_ORDER: Record<Tier, number> = { hot: 0, live: 1, warm: 2, cold: 3 }
 const RANK: Record<DotState, number> = { blocked: 0, waiting: 0, working: 1, background: 2, paused: 3, done: 4 }
 
-// `home`: on a card lifted out of its island, the island it came from.
-type IslandView = { key: string; name: string; rows: MonitorRow[]; best: DotState; tier: Tier; latest: number; why: string; home?: string }
-const homeKey = (island: IslandView) => island.home ?? island.key
+type IslandView = { key: string; name: string; rows: MonitorRow[]; best: DotState; tier: Tier; latest: number; why: string }
 
 // Repositories as islands: tier from the most pressing session in them, then the most recent.
 export function buildIslands(rows: MonitorRow[], at: number): IslandView[] {
@@ -843,9 +850,10 @@ export function registerMonitor(on: On) {
     const keys = new Set(allIslands.flatMap(island => (island.key === FOLDERLESS ? island.rows.map(keyOf) : [island.key])))
     const seenless = new Set((current.unseen ?? []).filter(key => keys.has(key)))
     const hasUnseen = (island: IslandView) =>
-      homeKey(island) === FOLDERLESS ? island.rows.some(row => seenless.has(keyOf(row))) : seenless.has(homeKey(island))
+      island.key === FOLDERLESS ? island.rows.some(row => seenless.has(keyOf(row))) : seenless.has(island.key)
     const flash = current.flash ?? {}
     const unfolded = new Set(current.openCold ?? [])
+    const foldedOpen = new Set(current.folded ?? [])
     const chosen: MonitorFilter = current.filter ?? 'all'
     const picture = (one: Piece) => <Svg source={one.svg} alt={one.alt} width={one.width} height={one.height} />
     // Lines across whatever room their box has. A solid one is a box of its colour, as tall as the
@@ -938,7 +946,7 @@ export function registerMonitor(on: On) {
       const under = children.length ? [...goesOn, depth] : goesOn
       const rail = (height: number) => picture(railPiece(depth, height, under))
       const fill = (text: JSX.Element) => <Box flexGrow={1} flexShrink={1} minWidth={0}>{text}</Box>
-      const isWorktree = row.cwd !== homeKey(island) && homeKey(island) !== FOLDERLESS
+      const isWorktree = row.cwd !== island.key && island.key !== FOLDERLESS
       const accent = state === 'blocked' ? C.hook : state === 'waiting' ? C.amber : state === 'working' ? C.green : undefined
       const activity = state === 'working' && row.activity
       const lines: JSX.Element[] = [
@@ -1021,7 +1029,7 @@ export function registerMonitor(on: On) {
       } else if (row.report) {
         // A report: what the turn did, then what it suggests. Bright while its island has a change
         // not yet looked at, dim after.
-        const fresh = homeKey(island) === FOLDERLESS ? seenless.has(keyOf(row)) : hasUnseen(island)
+        const fresh = island.key === FOLDERLESS ? seenless.has(keyOf(row)) : hasUnseen(island)
         lines.push(
           <Box key={`report:${row.id}`} flexDirection="row" alignItems="center">
             {rail(19)}
@@ -1079,10 +1087,11 @@ export function registerMonitor(on: On) {
     // What an island's head offers while grouping: leave its group, start, cancel, or take the
     // island or group being picked for.
     const groupOf = new Map(groups.flatMap(group => group.keys.map(key => [key, group] as const)))
-    // A dormant island in a group keeps its card, its title only, until unfolded.
-    const isFoldedInGroup = (island: IslandView) => island.tier === 'cold' && groupOf.has(island.key) && !unfolded.has(island.key)
+    // A folded island keeps its card, its title only: a dormant one until unfolded, an active one
+    // once the person folds it.
+    const isFolded = (island: IslandView) => (island.tier === 'cold' ? !unfolded.has(island.key) : foldedOpen.has(island.key))
     const isTarget = (island: IslandView) => {
-      if (!picking || island.home || groupOf.has(island.key)) return false
+      if (!picking || groupOf.has(island.key)) return false
       return picking.kind === 'group' || picking.key !== island.key
     }
     const headAction = (island: IslandView) => {
@@ -1091,11 +1100,6 @@ export function registerMonitor(on: On) {
           <Text size="caption">{label}</Text>
         </Button>
       )
-      // A lifted card names the group its island stays in.
-      if (island.home) {
-        const group = groupOf.get(island.home)
-        return group ? <Text key={`from:${island.key}`} size="caption" color={C.fg3} wrap="truncate-end">{group.name}</Text> : undefined
-      }
       if (groupOf.has(island.key)) return action(`leave:${island.key}`, '빼기', () => void leaveGroup($, island.key))
       if (isTarget(island)) return action(`join:${island.key}`, picking?.kind === 'group' ? '넣기' : '합치기', () => void join($, { kind: 'island', key: island.key }), true)
       const isPicking = picking?.kind === 'island' && picking.key === island.key
@@ -1104,28 +1108,32 @@ export function registerMonitor(on: On) {
 
     const islandCard = (island: IslandView) => {
       const isCold = island.tier === 'cold'
-      const isTitleOnly = isFoldedInGroup(island)
-      const isFolderless = homeKey(island) === FOLDERLESS
+      const isTitleOnly = isFolded(island)
+      const isFolderless = island.key === FOLDERLESS
       const hotColor = island.best === 'blocked' ? C.hook : C.amber
       const target = isTarget(island)
       const borderColor = target ? C.teal : island.tier === 'hot' ? hotColor : island.tier === 'live' ? C.green : isFolderless ? C.line2 : C.line
-      const flashing = flash[homeKey(island)]
+      const flashing = flash[island.key]
       const base = target ? PICK_BG : isFolderless ? C.bg : C.panel2
       const background = flashing === 'waiting' ? C.amberBg : flashing === 'working' ? C.greenBg : flashing === 'other' ? C.panel3 : base
       const whyColor = island.tier === 'hot' ? hotColor : island.tier === 'live' ? C.green : island.best === 'background' ? C.teal : C.fg3
       const isWorking = island.rows.some(row => rowDot(row) === 'working')
+      // An island with a session waiting on the person pulses in the question's colour until it is
+      // answered or closed; folded or not. Its group's frame does not.
+      const asks = island.rows.filter(row => row.state === 'waiting')
+      const pulse = asks.length === 0 ? undefined : asks.some(row => row.waitKind === 'blocked') ? C.hook : C.amber
+      // The name folds the card to its head and unfolds it.
       const head = (
         <Box key="head" flexDirection="row" alignItems="center" gap="xs">
           {picture(dotPiece(island.best))}
-          {isCold ? (
-            <Button key={`fold-head:${island.key}`} plain onPress={() => void toggleCold($, island.key)}>
-              <Text size="footnote" weight="semibold">{island.name}</Text>
+          <Box flexShrink={1} minWidth={0}>
+            <Button key={`fold-head:${island.key}`} plain onPress={() => void toggleIsland($, island.key, isCold)}>
+              <Text size="caption" color={C.fg3}>{isTitleOnly ? '▸ ' : '▾ '}</Text>
+              <Text size="footnote" weight="semibold" color={isFolderless ? C.fg2 : undefined} wrap="truncate-end">{island.name}</Text>
             </Button>
-          ) : (
-            <Text size="footnote" weight="semibold" color={isFolderless ? C.fg2 : undefined} wrap="truncate-end">{island.name}</Text>
-          )}
+          </Box>
           {!isFolderless && (
-            <Button key={`new:${island.key}`} plain dimColor onPress={() => void openNewChat($, homeKey(island))}>
+            <Button key={`new:${island.key}`} plain dimColor onPress={() => void openNewChat($, island.key)}>
               <Text size="caption">+</Text>
             </Button>
           )}
@@ -1163,10 +1171,19 @@ export function registerMonitor(on: On) {
           {roots.flatMap((row, i) => node(island, row, 0, [], i === roots.length - 1))}
         </Box>
       )
+      // The pulse lies under the card's content, which stands above it and takes the presses.
+      const washed = pulse ? (
+        <Box key="washed" position="relative" flexGrow={1} flexDirection="column">
+          <Box position="absolute" top={0} left={0}>{picture(pulsePiece(pulse, pulse === C.hook ? '훅 차단 깜빡임' : '질문 깜빡임'))}</Box>
+          <Box position="relative" flexGrow={1} flexDirection="column">{padded}</Box>
+        </Box>
+      ) : (
+        padded
+      )
       if (!isFolderless || target) {
         return (
-          <Box key={`island:${island.key}`} flexGrow={1} flexDirection="column" borderStyle="round" borderColor={borderColor} backgroundColor={background}>
-            {padded}
+          <Box key={`island:${island.key}`} flexGrow={1} flexDirection="column" overflow="hidden" borderStyle="round" borderColor={borderColor} backgroundColor={background}>
+            {washed}
           </Box>
         )
       }
@@ -1175,7 +1192,7 @@ export function registerMonitor(on: On) {
       // and the card clips them all.
       return (
         <Box key={`island:${island.key}`} position="relative" overflow="hidden" flexGrow={1} flexDirection="column" backgroundColor={background}>
-          <Box flexGrow={1} flexDirection="column">{padded}</Box>
+          <Box flexGrow={1} flexDirection="column">{washed}</Box>
           <Box flexDirection="row">{dashed('dash:bottom', borderColor)}</Box>
           <Box position="absolute" top={0} left={0} right={0} flexDirection="row">
             {dashed('dash:top', borderColor)}
@@ -1224,21 +1241,9 @@ export function registerMonitor(on: On) {
       (chosen === 'wait' && island.rows.some(row => row.state === 'waiting')) ||
       (chosen === 'work' && island.rows.some(row => dotOf(row.state) === 'working')) ||
       (chosen === 'new' && hasUnseen(island))
-    // A waiting session leaves its island for the top of the board, on a card of its own: the
-    // question rises alone and its island, in a group or not, keeps its place.
-    const asking: IslandView[] = []
-    const split = allIslands.flatMap(island => {
-      const lifted = island.rows.filter(row => row.state === 'waiting')
-      if (lifted.length === 0) return [island]
-      asking.push(...lifted.map(row => ({ ...islandView(island.key, [row], at), key: `ask:${row.id}`, home: island.key })))
-      // An island left with nothing keeps its place, saying where its question went.
-      const rest = island.rows.filter(row => row.state !== 'waiting')
-      return [rest.length ? islandView(island.key, rest, at) : { ...island, rows: [], best: 'paused' as const, tier: 'warm' as const, why: '질문은 위에' }]
-    })
     // The board keeps one order whatever the sessions do: by name, Latin before Hangul, numbers
-    // by value. Only a waiting session leaves it, for the top.
-    const islands = split.filter(matches).sort((a, b) => byName(a.name, b.name) || byName(a.key, b.key))
-    const lifted = asking.filter(matches).sort((a, b) => timeOf(a.rows[0]!) - timeOf(b.rows[0]!))
+    // by value. A waiting session stays in its island, which pulses until the question is answered.
+    const islands = allIslands.filter(matches).sort((a, b) => byName(a.name, b.name) || byName(a.key, b.key))
     const free = islands.filter(island => !groupOf.has(island.key))
     const active = free.filter(island => island.tier !== 'cold')
     const cold = free.filter(island => island.tier === 'cold')
@@ -1252,7 +1257,7 @@ export function registerMonitor(on: On) {
         const shells = state === 'working' || state === 'background' ? (row.tasks?.length ?? 0) * 22 : 0
         return NODE_PX + asks + shells
       }
-      if (isFoldedInGroup(island)) return room + 26 + 12
+      if (isFolded(island)) return room + 26 + 12
       return room + 26 + 13 + island.rows.reduce((sum, row) => sum + rowsOf(row), 0) + 12
     }
     // Two columns of blocks, each keeping the column it was first given; a new one goes under the
@@ -1411,7 +1416,7 @@ export function registerMonitor(on: On) {
             `chip:${island.key}`,
             { border: isOpen ? C.fg3 : C.line, fill: C.panel, outside: C.bg },
             <Box flexDirection="row" alignItems="center">
-              <Button key={`fold:${island.key}`} plain dimColor={!isOpen} onPress={() => void toggleCold($, island.key)}>
+              <Button key={`fold:${island.key}`} plain dimColor={!isOpen} onPress={() => void toggleIsland($, island.key, true)}>
                 <Text size="caption">{island.name}</Text>
                 <Text size="caption" dimColor>{` ${island.rows.length}`}</Text>
               </Button>
@@ -1438,11 +1443,6 @@ export function registerMonitor(on: On) {
             grid(key, list.filter(island => unfolded.has(island.key)), CARD_GAP_COLD),
           ]
     const board = [
-      ...lifted.map(island => (
-        <Box key={`row:${island.key}`} flexDirection="row">
-          {placed(island, BADGE_ROOM.top, true)}
-        </Box>
-      )),
       framedGroups.length ? mixedColumns(framedGroups, active) : grid('active', active, BADGE_ROOM.top),
       // Dormant islands in two shelves: quiet for two hours, then for three days, lower down.
       ...dormant('cold', '휴면 · 2시간 이상', cold.filter(island => at - island.latest < LONG_COLD_MS)),
@@ -1490,7 +1490,7 @@ export function registerMonitor(on: On) {
           <Text size="caption">{label}</Text>
         </Button>,
       )
-    const empty = chosen !== 'all' && islands.length === 0 && lifted.length === 0
+    const empty = chosen !== 'all' && islands.length === 0
     const hint = (key: string, what: string) => (
       <Text key={key} size="caption" mono color={C.fg3}>
         <Text color={C.fg2}>{key}</Text> {what}

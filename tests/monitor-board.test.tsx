@@ -356,8 +356,8 @@ test('islands framed as a group: made by picking two, renamed, added to, left an
   await press(`add:${id}`)
   expect((await ui.find({ key: `join:${SCRATCH}` }))?.text).toBe('넣기')
   await press(`join:${SCRATCH}`)
-  // Its one session waits, so it rises out of the frame; the island keeps its place, empty.
-  expect((await ui.find({ type: 'Text', text: /^섬 3 · / }))?.text).toBe('섬 3 · 세션 3')
+  // Its one session waits, and stays in its island, in the frame.
+  expect((await ui.find({ type: 'Text', text: /^섬 3 · / }))?.text).toBe('섬 3 · 세션 4')
 
   // 빼기 takes one out; 풀기 undoes the frame.
   await press(`leave:${SCRATCH}`)
@@ -368,37 +368,39 @@ test('islands framed as a group: made by picking two, renamed, added to, left an
   await ui.unmount()
 })
 
-test('a waiting session in a group rises alone, on a card naming its group; the group stays put', async ($, on) => {
+test('a waiting session stays in its island, which pulses until answered; any island folds to its title and back', async ($, on) => {
   stage(on, { running: true })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
   const ui = await $.ui.mount(PANE)
   const press = (key: string) => $.ui.press({ plugin: 'gudals', key })
-  const LEC = 'C:\\w\\lecture-artifact'
+  const pulses = async () => (await ui.findAll({ type: 'Svg' })).filter(one => String(one.props.alt) === '질문 깜빡임').length
+  const LEC = String.raw`C:\w\lecture-artifact`
   const SCRATCH = '폴더 없음'
 
-  // The folder-less island holds the waiting session; group it with the working one.
+  // In a group, the question stays where its island is; the island pulses, the frame does not.
   await press(`group:${LEC}`)
   await press(`join:${SCRATCH}`)
-  const name = await ui.find({ type: 'Button', text: 'lecture-artifact 외' })
-  expect(name !== undefined).toBe(true)
-
-  // The question has a card of its own at the top, named after the group, answers and all.
-  const keys = (await ui.findAll({})).map(one => String(one.key ?? ''))
-  const lifted = keys.indexOf(`place:ask:${ID.ask}`)
-  expect(lifted >= 0).toBe(true)
-  expect(lifted < keys.findIndex(key => key.startsWith('grp:'))).toBe(true)
-  // The group's name shows twice: on its frame, and on the card that rose out of it.
-  expect((await ui.findAll({ type: 'Text', text: 'lecture-artifact 외' })).length).toBe(2)
-  expect((await ui.find({ key: `answer:${ID.ask}:0` }))?.text).toBe('1 A + C피크')
-  // It is shown once: the group keeps only what does not wait, and an island left with nothing
-  // keeps its place, saying where its question went, so it can still leave the group.
+  expect(await ui.find({ key: `place:ask:${ID.ask}` })).toBe(undefined)
   expect((await ui.findAll({ key: `node:${ID.ask}` })).length).toBe(1)
-  expect((await ui.find({ type: 'Text', text: /^섬 2 · / }))?.text).toBe('섬 2 · 세션 1')
-  expect((await ui.find({ type: 'Text', text: '질문은 위에' }))?.text).toBe('질문은 위에')
-  expect((await ui.find({ key: `leave:${SCRATCH}` }))?.text).toBe('빼기')
-  // The lifted card cannot be grouped again.
-  expect(await ui.find({ key: `group:ask:${ID.ask}` })).toBe(undefined)
+  expect((await ui.find({ key: `answer:${ID.ask}:0` }))?.text).toBe('1 A + C피크')
+  expect(await pulses()).toBe(1)
+
+  // An active island folds to its title and back; folded, it still pulses.
+  expect((await ui.find({ key: `fold-head:${SCRATCH}` }))?.text).toBe('▾ 폴더 없음')
+  await press(`fold-head:${SCRATCH}`)
+  expect(await ui.find({ key: `node:${ID.ask}` })).toBe(undefined)
+  expect((await ui.find({ key: `fold-head:${SCRATCH}` }))?.text).toBe('▸ 폴더 없음')
+  expect(await pulses()).toBe(1)
+  // The fold holds through a refresh.
+  await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
+  expect(await ui.find({ key: `node:${ID.ask}` })).toBe(undefined)
+  await press(`fold-head:${SCRATCH}`)
+  expect((await ui.findAll({ key: `node:${ID.ask}` })).length).toBe(1)
+
+  // Answered and closed, the pulse stops.
+  await press(`dismiss:${ID.ask}`)
+  expect(await pulses()).toBe(0)
   await ui.unmount()
 })
 
@@ -429,7 +431,7 @@ test('dormant islands sit on two shelves, and in a group they keep a title-only 
   await press(`fold-head:${LMS}`)
   expect(await ui.find({ key: `node:${ID.lms}` })).toBe(undefined)
   expect(await ui.find({ key: `fold:${LMS}` })).toBe(undefined)
-  expect((await ui.find({ key: `fold-head:${LMS}` }))?.text).toBe('HY-LMS')
+  expect((await ui.find({ key: `fold-head:${LMS}` }))?.text).toBe('▸ HY-LMS')
   await press(`fold-head:${LMS}`)
   expect((await ui.find({ key: `node:${ID.lms}` })) !== undefined).toBe(true)
   await ui.unmount()
@@ -553,13 +555,16 @@ test('the board keeps one order: groups by name, then the islands outside them b
   const ui = await $.ui.mount(PANE)
   const order = async () => {
     const keys = (await ui.findAll({})).map(one => String(one.key ?? ''))
-    return [`open:${ID.ask}`, 'grp:g-alpha', 'grp:g-late', String.raw`new:C:\w\inquiry`].map(key => keys.indexOf(key))
+    const at = ['grp:g-alpha', 'grp:g-late', String.raw`new:C:\w\inquiry`, `open:${ID.ask}`].map(key => keys.indexOf(key))
+    // Where each stands among the four: what a card holds moves the indices, not the order.
+    return at.map(index => at.filter(other => other < index).length + (index < 0 ? -10 : 0))
   }
   const first = await order()
-  // The waiting session leads; then the groups, Latin before Hangul, so the working session's
-  // group does not jump ahead. (The tree lists the left column, then the right.)
+  // The groups first, Latin before Hangul, so the working session's group does not jump ahead;
+  // the waiting session stays in its island, among the rest. (The tree lists the left column,
+  // then the right.)
   expect(first.every(index => index >= 0)).toBe(true)
-  expect(first[0]! < first[1]! && first[1]! < first[2]!).toBe(true)
+  expect(first[0]! < first[1]!).toBe(true)
 
   // The working session stops: nothing moves.
   vlsi.running = false
