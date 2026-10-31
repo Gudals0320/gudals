@@ -1,0 +1,4 @@
+# docs-convention 의 셸 스크립트와 훅은 CRLF 로 바뀌면 #!/bin/sh 가 깨진다.
+*.sh text eol=lf
+*.mjs text eol=lf
+skills/docs-convention/assets/pre-commit text eol=lf
