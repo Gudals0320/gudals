@@ -5,7 +5,7 @@ import type { MonitorFilter, MonitorFlash, MonitorGroup, MonitorObserved, Monito
 import { MIN, classify, describeActivity, newChatLink, parseEvents, sessionLink } from './classify'
 import { costLine, describeBackground, readChoice, readLocal, resetCost, timed } from './local'
 import type { Block, Choice } from './local'
-import { C, NODE_PX, badgePiece, pulsePiece, pinPiece, cardCornerPiece, cardSidePiece, dashTilePiece, dotPiece, elbowPiece, frameLineSource, frameSide, glintPiece, gutterPiece, newDotPiece, pillPiece, railPiece, spacerPiece, worktreePiece } from './pieces'
+import { C, NODE_PX, badgePiece, pulseEdgePiece, pinPiece, cardCornerPiece, cardSidePiece, dashTilePiece, dotPiece, elbowPiece, frameLineSource, frameSide, glintPiece, gutterPiece, newDotPiece, pillPiece, railPiece, spacerPiece, worktreePiece } from './pieces'
 import type { DotState, Frame, Piece } from './pieces'
 
 // The monitor pulls: it reads the app's session list and each session's recent transcript when it
@@ -1118,8 +1118,8 @@ export function registerMonitor(on: On) {
       const background = flashing === 'waiting' ? C.amberBg : flashing === 'working' ? C.greenBg : flashing === 'other' ? C.panel3 : base
       const whyColor = island.tier === 'hot' ? hotColor : island.tier === 'live' ? C.green : island.best === 'background' ? C.teal : C.fg3
       const isWorking = island.rows.some(row => rowDot(row) === 'working')
-      // An island with a session waiting on the person pulses in the question's colour until it is
-      // answered or closed; folded or not. Its group's frame does not.
+      // An island with a session waiting on the person: its card's edges pulse in the question's
+      // colour until it is answered or closed, folded or not. Its group's frame does not.
       const asks = island.rows.filter(row => row.state === 'waiting')
       const pulse = asks.length === 0 ? undefined : asks.some(row => row.waitKind === 'blocked') ? C.hook : C.amber
       // The name folds the card to its head and unfolds it.
@@ -1171,19 +1171,21 @@ export function registerMonitor(on: On) {
           {roots.flatMap((row, i) => node(island, row, 0, [], i === roots.length - 1))}
         </Box>
       )
-      // The pulse lies under the card's content, which stands above it and takes the presses.
-      const washed = pulse ? (
-        <Box key="washed" position="relative" flexGrow={1} flexDirection="column">
-          <Box position="absolute" top={0} left={0}>{picture(pulsePiece(pulse, pulse === C.hook ? '훅 차단 깜빡임' : '질문 깜빡임'))}</Box>
-          <Box position="relative" flexGrow={1} flexDirection="column">{padded}</Box>
-        </Box>
-      ) : (
-        padded
-      )
+      // The pulsing edges, inside the border; the card, positioned and clipping, cuts them to size.
+      const pulseAlt = pulse === C.hook ? '훅 차단 깜빡임' : '질문 깜빡임'
+      const edges = pulse
+        ? [
+            <Box key="pulse:top" position="absolute" top={0} left={0}>{picture(pulseEdgePiece(pulse, pulseAlt, 'across'))}</Box>,
+            <Box key="pulse:bottom" position="absolute" bottom={0} left={0}>{picture(pulseEdgePiece(pulse, pulseAlt, 'across'))}</Box>,
+            <Box key="pulse:left" position="absolute" top={0} left={0}>{picture(pulseEdgePiece(pulse, pulseAlt, 'down'))}</Box>,
+            <Box key="pulse:right" position="absolute" top={0} right={0}>{picture(pulseEdgePiece(pulse, pulseAlt, 'down'))}</Box>,
+          ]
+        : []
       if (!isFolderless || target) {
         return (
-          <Box key={`island:${island.key}`} flexGrow={1} flexDirection="column" overflow="hidden" borderStyle="round" borderColor={borderColor} backgroundColor={background}>
-            {washed}
+          <Box key={`island:${island.key}`} position="relative" overflow="hidden" flexGrow={1} flexDirection="column" borderStyle="round" borderColor={borderColor} backgroundColor={background}>
+            {padded}
+            {edges}
           </Box>
         )
       }
@@ -1192,7 +1194,7 @@ export function registerMonitor(on: On) {
       // and the card clips them all.
       return (
         <Box key={`island:${island.key}`} position="relative" overflow="hidden" flexGrow={1} flexDirection="column" backgroundColor={background}>
-          <Box flexGrow={1} flexDirection="column">{washed}</Box>
+          <Box flexGrow={1} flexDirection="column">{padded}</Box>
           <Box flexDirection="row">{dashed('dash:bottom', borderColor)}</Box>
           <Box position="absolute" top={0} left={0} right={0} flexDirection="row">
             {dashed('dash:top', borderColor)}
@@ -1203,6 +1205,7 @@ export function registerMonitor(on: On) {
           <Box position="absolute" top={0} right={0}>{picture(cardCornerPiece('tr', borderColor, background))}</Box>
           <Box position="absolute" bottom={0} left={0}>{picture(cardCornerPiece('bl', borderColor, background))}</Box>
           <Box position="absolute" bottom={0} right={0}>{picture(cardCornerPiece('br', borderColor, background))}</Box>
+          {edges}
         </Box>
       )
     }

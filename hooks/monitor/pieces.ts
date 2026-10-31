@@ -210,22 +210,18 @@ export function dashTilePiece(color: string): Piece {
 export const GLINT_TILE_PX = 300
 const GLINT_TILE_S = 0.9
 
-// A slow wash of colour over a card whose island waits on the person: up to a fifth of the colour
-// and back every 2.4s, for as long as the question stands. Drawn larger than any card and
-// stretched; the card clips it.
-export const PULSE_PX = { width: 1600, height: 2400 }
-
-export function pulsePiece(color: string, alt: string): Piece {
-  const { width, height } = PULSE_PX
-  return {
+// One edge of a card whose island waits on the person, glowing in the question's colour and
+// fading again every 2.4s, for as long as the question stands. 2px thick and longer than any card;
+// the card clips it. Only the edges: nothing lies over the card's content.
+export function pulseEdgePiece(color: string, alt: string, direction: 'across' | 'down'): Piece {
+  const [width, height] = direction === 'across' ? [1600, 2] : [2, 2400]
+  return svg(
     width,
     height,
     alt,
-    svg:
-      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">` +
-      `<rect width="${width}" height="${height}" fill="${color}" opacity="0">` +
-      `<animate attributeName="opacity" values="0;0.2;0" dur="2.4s" repeatCount="indefinite"/></rect></svg>`,
-  }
+    `<rect width="${width}" height="${height}" fill="${color}" opacity="0">` +
+      `<animate attributeName="opacity" values="0;1;0" dur="2.4s" repeatCount="indefinite"/></rect>`,
+  )
 }
 
 export function glintPiece(index = 0, count = 1): Piece {

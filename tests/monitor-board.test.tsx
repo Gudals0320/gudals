@@ -374,6 +374,7 @@ test('a waiting session stays in its island, which pulses until answered; any is
   await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
   const ui = await $.ui.mount(PANE)
   const press = (key: string) => $.ui.press({ plugin: 'gudals', key })
+  // Four edges to a pulsing card.
   const pulses = async () => (await ui.findAll({ type: 'Svg' })).filter(one => String(one.props.alt) === '질문 깜빡임').length
   const LEC = String.raw`C:\w\lecture-artifact`
   const SCRATCH = '폴더 없음'
@@ -384,14 +385,14 @@ test('a waiting session stays in its island, which pulses until answered; any is
   expect(await ui.find({ key: `place:ask:${ID.ask}` })).toBe(undefined)
   expect((await ui.findAll({ key: `node:${ID.ask}` })).length).toBe(1)
   expect((await ui.find({ key: `answer:${ID.ask}:0` }))?.text).toBe('1 A + C피크')
-  expect(await pulses()).toBe(1)
+  expect(await pulses()).toBe(4)
 
   // An active island folds to its title and back; folded, it still pulses.
   expect((await ui.find({ key: `fold-head:${SCRATCH}` }))?.text).toBe('▾ 폴더 없음')
   await press(`fold-head:${SCRATCH}`)
   expect(await ui.find({ key: `node:${ID.ask}` })).toBe(undefined)
   expect((await ui.find({ key: `fold-head:${SCRATCH}` }))?.text).toBe('▸ 폴더 없음')
-  expect(await pulses()).toBe(1)
+  expect(await pulses()).toBe(4)
   // The fold holds through a refresh.
   await $.tool.call({ tool: 'mcp__gudals__monitor_snapshot' })
   expect(await ui.find({ key: `node:${ID.ask}` })).toBe(undefined)
