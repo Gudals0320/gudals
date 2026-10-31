@@ -10,7 +10,7 @@ Gudals0320의 개인 Claude Code 셋업입니다. 스킬과 mod를 플러그인 
 | 스킬 | `write-ko` | `/gudals:write-ko` (또는 자동) | 한국어 초안을 쓸 때 사실·조건·불확실성을 보존하고 목적과 독자에 맞는 구조와 표현을 고릅니다. ASD-STE100 방향의 [ste-ko](https://github.com/beamonic/ste-ko)(MIT)에서 파생했고, 출처는 [ORIGIN.md](skills/write-ko/ORIGIN.md)에 있습니다 |
 | 스킬 | `inquiry` | `/gudals:inquiry` (직접 호출만) | 질문이나 웹·SNS에서 도는 주장을 받아 분해 → 범위 승인 → 조사 → 규칙 판정까지 한 번에 하고, 근거를 결론에서 원문까지 거꾸로 따라갈 수 있는 단일 HTML 보고서를 냅니다. 판정은 코드 규칙이 하고 모든 인용은 보관한 원문과 대조합니다 |
 | 스킬 + mod | `coordinate` | `/gudals:coordinate` (직접 호출만) | 계획을 마친 작업을 소유 범위가 분명한 하위 세션들로 나눠 워크트리에서 병렬로 돌리고, 메인 세션은 중계와 취합만 합니다. 하위 세션의 규칙은 지시문 대신 mod 훅이 주입하고 강제합니다 |
-| mod | transprompt | `/transprompt on \| off \| auto \| review \| status \| why` (또는 `/gudals:transprompt …`) | 음성인식으로 받아쓴 긴 프롬프트를 가로채 마크다운으로 구조화해 보냅니다. 기본은 자동 전송이고, `review` 모드에서는 승인을 받은 뒤 보냅니다. 옵션 대신 내용을 쓰면(`/transprompt 고칠 내용…`) 음성 판정·최소 글자 수·켜짐 여부와 모드에 상관없이 무조건 구조화해서 바로 보냅니다 |
+| mod | transprompt | `/transprompt 내용` (또는 `/gudals:transprompt 내용`) | 요청할 때만 동작합니다. 명령 뒤에 쓴 내용(받아쓴 긴 프롬프트 등)을 마크다운으로 구조화해서 바로 보냅니다. 구조화에 실패하면 원문을 보냅니다. 프롬프트를 자동으로 가로채지는 않습니다 |
 | mod | monitor | `/gudals:monitor` | Desktop의 모든 Code 세션을 저장소별 섬으로 묶어 한 패널(Monitor)에 보여 줍니다. 대기(다음 단계 박스, 훅 차단), 실행, 백그라운드, 휴면을 색과 위치로 구분하고, 제목을 누르면 그 세션으로 옮기며, 대기 카드의 답 버튼은 그 세션에 메시지를 보냅니다 |
 
 monitor는 패널을 연 세션에서만 돌아갑니다. 앱의 세션 목록과 각 세션 기록을 3초마다 읽고(모델 호출이 없어 토큰은 들지 않습니다), 백그라운드 셸은 15초마다 확인합니다. 답 버튼의 메시지는 받는 세션에 "다른 세션이 보낸 메시지"로 도착하므로, 사용자 확인이 필요한 질문에는 그 세션이 직접 확인을 다시 요청할 수 있습니다. 화면 설계는 [hooks/monitor/DESIGN.md](hooks/monitor/DESIGN.md)에 있습니다.
@@ -57,24 +57,11 @@ claude plugin marketplace update gudals
 
 | 설정 | 기본값 | 설명 |
 | --- | --- | --- |
-| `transpromptAuto` | `true` | 구조화한 결과를 승인 없이 바로 보냅니다. 실패하면 원문을 보냅니다. `/transprompt auto` 또는 `review`로 고른 모드가 이 값보다 우선합니다 |
-| `transpromptMinChars` | 200 | 이 글자 수 이상만 가로챕니다 |
 | `transpromptModel` | `sonnet` | 구조화에 쓸 모델 |
-| `transpromptVoiceGate` | `true` | 끄면 음성 판정 없이 길이만 봅니다 |
-| `transpromptVoiceThreshold` | 2 | 이 점수 이상이면 음성으로 봅니다 |
 
 `/plugin configure gudals@gudals` 또는 `/config`에서 바꿉니다.
 
-음성 판정은 `hooks/transprompt/voice.ts`가 점수로 추정합니다(기준 2점).
-
-- 바로 키보드로 확정: 줄머리 `#` 헤딩, 줄머리 `*`·`-` 불릿, 코드펜스, 키로 한 글자씩 친 비율 80% 이상
-- 세지 않음: 스킬 호출(`/gudals:write-ko`)의 슬래시와 콜론, 줄바꿈 1~2개, 마침표·쉼표
-- 음성 쪽: 한 번에 덩어리로 들어옴 +2, 100자 이상인데 줄바꿈 2개 이하 +1, 군말·접속사·구어체 어미 +1~2
-- 키보드 쪽: `1.` `2.` 같은 숫자 나열 2개 이상 -2, 줄바꿈 3개 이상 -2, 백틱 코드·경로·코드 기호 -1, 영문 비중 높음 -1
-
-스킬을 부른 뒤 받아쓴 경우(`/gudals:write-ko …`)에는 스킬 이름 뒤의 내용만 판정하고, 구조화한 내용으로 그 스킬을 다시 실행합니다. 내장 명령(`/compact` 등)은 건드리지 않습니다.
-
-`/transprompt why`로 마지막 프롬프트의 점수, 근거, 입력 방식(키로 친 글자 / 한 번에 들어온 글자)을 볼 수 있습니다. 입력 방식이 0 / 0이면 그 화면에서는 입력창 편집이 mod에 오지 않아 텍스트 모양만으로 판정한 것입니다.
+예전의 자동 가로채기(음성 판정, 검토 패널, 자동·검토 모드, `on` `off` `auto` `review` `status` `why` 옵션)는 이 기능을 다른 곳으로 옮기면서 뺐습니다.
 
 ## 구조
 
