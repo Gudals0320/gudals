@@ -6,9 +6,6 @@
   },
   "repository": "https://github.com/Gudals0320/gudals",
   "types": "./types/index.d.ts",
-  "dependencies": [
-    "archify"
-  ],
   "userConfig": {
     "transpromptModel": {
       "type": "string",
