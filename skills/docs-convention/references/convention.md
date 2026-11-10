@@ -155,7 +155,7 @@ node scripts/check-docs.mjs --close    # 단계 닫기: HEAD 대비 비증가, �
 
 ## 8. 도입하기
 
-1. 이 규약을 `docs/README.md`로, `check-docs.mjs`와 `docs-guard.mjs`를 `scripts/`로, `pre-commit`을 `.githooks/`로 복사한다. `.claude/settings.json`에 훅 설정을 합친다(스킬의 `assets/hooks.json`). `git config core.hooksPath .githooks`를 건다. SessionStart 훅이 새 클론에서도 같은 설정을 건다.
+1. 이 규약을 `docs/README.md`로, `check-docs.mjs`와 `docs-guard.mjs`를 `scripts/`로, `pre-commit`을 `.githooks/`로 복사한다. `.claude/settings.json`에 훅 설정을 합친다(스킬의 `assets/hooks.json`). 훅 명령은 `$CLAUDE_PROJECT_DIR` 기준이라 세션의 작업 폴더가 `docs/` 같은 하위 폴더로 옮겨 가 있어도 동작한다. `git config core.hooksPath .githooks`를 건다. SessionStart 훅이 새 클론에서도 같은 설정을 건다.
 2. 계획 문서를 나눈다. 프로세스 구조, 데이터 모델, 모듈 표, API 표는 ARCH로. 끝난 단계의 시나리오와 경위, 측정 기록은 `decisions.md`와 작업 파일의 보고 절로. PLAN에는 지금 단계와 다음 단계만 남기고 세 절 구조로 다시 쓴다.
 3. 작업마다 `docs/log/<작업>.md`를 만들고 지시문을 지시 절로, 보고서를 보고 절로 옮긴다. 첫 줄은 `상태: 닫힘`.
 4. CLAUDE.md에서 변경 이력 문단을 README로, 도구·환경 변수·명령 이름이 든 줄을 `testing.md`로 옮긴다. 다음 한 줄을 넣는다.

@@ -8,7 +8,8 @@
 // 예산은 저장소 루트의 .docs-budget.json 으로 바꿀 수 있으나 기본값의 1.5배까지다.
 
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
-import { join, resolve, relative } from "node:path";
+import { join, resolve, relative, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
 const DEFAULTS = {
@@ -51,7 +52,10 @@ if (STOP) {
   try { if (JSON.parse(readFileSync(0, "utf8") || "{}").stop_hook_active) process.exit(0); } catch { /* 입력 없음 */ }
 }
 
-const root = resolve(rootArg ?? process.cwd());
+// 저장소 루트: 인자 > 훅이 주는 CLAUDE_PROJECT_DIR > 이 스크립트가 <루트>/scripts/ 에 설치돼 있으면 그 루트 > 현재 폴더.
+// 훅은 세션의 작업 폴더가 docs/ 같은 하위 폴더로 옮겨 간 채 돌 수 있어서 cwd 를 믿지 않는다.
+const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const root = resolve(rootArg ?? process.env.CLAUDE_PROJECT_DIR ?? (existsSync(join(scriptRoot, "docs")) ? scriptRoot : process.cwd()));
 if (!existsSync(root) || !statSync(root).isDirectory()) fail2(`경로 없음: ${root}`);
 
 const { config, overrides } = loadConfig(root);

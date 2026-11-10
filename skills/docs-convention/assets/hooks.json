@@ -3,17 +3,17 @@
     "PreToolUse": [
       {
         "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash",
-        "hooks": [{ "type": "command", "command": "node scripts/docs-guard.mjs" }]
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/scripts/docs-guard.mjs\"" }]
       }
     ],
     "Stop": [
       {
-        "hooks": [{ "type": "command", "command": "node scripts/check-docs.mjs --stop" }]
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/scripts/check-docs.mjs\" --stop" }]
       }
     ],
     "SessionStart": [
       {
-        "hooks": [{ "type": "command", "command": "git config core.hooksPath .githooks" }]
+        "hooks": [{ "type": "command", "command": "git -C \"$CLAUDE_PROJECT_DIR\" config core.hooksPath .githooks" }]
       }
     ]
   }

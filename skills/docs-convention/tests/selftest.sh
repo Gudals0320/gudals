@@ -21,8 +21,10 @@ expect_out() {
   if printf '%s' "$OUT" | grep -q -- "$1"; then PASS=$((PASS+1)); echo "  ok    출력에 \"$1\" 포함: $2"
   else FAIL=$((FAIL+1)); echo "  FAIL  출력에 \"$1\" 없음: $2"; echo "$OUT" | sed 's/^/        /' | head -12; fi
 }
-# guard <기대코드> <설명> <json>
-guard() { expect "$1" "$2" bash -c "printf '%s' '$3' | node '$GUARD'"; }
+# guard <기대코드> <설명> <json>   (훅처럼 CLAUDE_PROJECT_DIR 을 받는다)
+guard() { expect "$1" "$2" bash -c "printf '%s' '$3' | CLAUDE_PROJECT_DIR='$WT' node '$GUARD'"; }
+# guardw: 워크트리 세션. Claude Code 는 워크트리 세션에 CLAUDE_PROJECT_DIR 로 워크트리 루트를 준다.
+guardw() { expect "$1" "$2" bash -c "printf '%s' '$3' | CLAUDE_PROJECT_DIR='$WK' node '$GUARD'"; }
 
 T="$(mktemp -d)"; WT="$(winpath "$T")"
 trap 'rm -rf "$T"' EXIT
@@ -138,6 +140,13 @@ rm "$T/NOTES.md"
 expect 0 "--stop 위반 없으면 출력 없음" bash -c "cd '$T' && printf '{}' | node '$CHECK' --stop"
 if [ -z "$OUT" ]; then PASS=$((PASS+1)); echo "  ok    통과 시 출력 없음"; else FAIL=$((FAIL+1)); echo "  FAIL  통과인데 출력 있음: $OUT"; fi
 
+echo "== 세션 작업 폴더가 하위 폴더일 때 (훅은 cwd 를 믿지 않는다) =="
+echo "# n" > "$T/NOTES.md"
+expect 0 "--stop: cwd 가 docs/ 여도 설치된 스크립트가 루트를 찾는다" bash -c "cd '$T/docs' && printf '{}' | node '$T/scripts/check-docs.mjs' --stop"; expect_out '"decision":"block"' "하위 폴더에서도 위반을 본다"
+expect 0 "--stop: CLAUDE_PROJECT_DIR 이 있으면 그것을 루트로 쓴다" bash -c "cd '$T/docs' && printf '{}' | CLAUDE_PROJECT_DIR='$WT' node '$CHECK' --stop"; expect_out '"decision":"block"' "환경 변수 루트"
+expect 2 "guard: 루트 훅 명령처럼 cwd 가 docs/ 인 채 루트 md 생성" bash -c "printf '%s' '{\"tool_name\":\"Write\",\"cwd\":\"$WT/docs\",\"tool_input\":{\"file_path\":\"$WT/NOTES2.md\"}}' | node '$T/scripts/docs-guard.mjs'"
+rm "$T/NOTES.md"
+
 echo "== 편집 차단 훅 (docs-guard) =="
 WK="$WT/.claude/worktrees/p8"; mkdir -p "$T/.claude/worktrees/p8/docs/log"; cp "$T/docs/log/p1-backend.md" "$T/.claude/worktrees/p8/docs/log/"
 guard 2 "루트에 NOTES.md 생성 거부"          "{\"tool_name\":\"Write\",\"cwd\":\"$WT\",\"tool_input\":{\"file_path\":\"$WT/NOTES.md\"}}"
@@ -149,10 +158,11 @@ guard 2 "닫힌 작업 파일 편집 거부"           "{\"tool_name\":\"Edit\",
 guard 0 "열린 작업 파일 편집 허용"           "{\"tool_name\":\"Edit\",\"cwd\":\"$WT\",\"tool_input\":{\"file_path\":\"$WT/docs/log/p2-sidebar.md\"}}"
 guard 2 "예산 파일 편집 거부"                "{\"tool_name\":\"Write\",\"cwd\":\"$WT\",\"tool_input\":{\"file_path\":\"$WT/.docs-budget.json\"}}"
 guard 0 "지휘 세션의 PLAN 편집 허용"         "{\"tool_name\":\"Edit\",\"cwd\":\"$WT\",\"tool_input\":{\"file_path\":\"$WT/docs/PLAN.md\"}}"
-guard 2 "작업자(워크트리)의 PLAN 편집 거부"  "{\"tool_name\":\"Edit\",\"cwd\":\"$WK\",\"tool_input\":{\"file_path\":\"$WK/docs/PLAN.md\"}}"
-guard 2 "작업자의 CLAUDE.md 편집 거부"       "{\"tool_name\":\"Edit\",\"cwd\":\"$WK\",\"tool_input\":{\"file_path\":\"$WK/CLAUDE.md\"}}"
-guard 0 "작업자의 ARCH 편집 허용"            "{\"tool_name\":\"Edit\",\"cwd\":\"$WK\",\"tool_input\":{\"file_path\":\"$WK/docs/ARCH.md\"}}"
-guard 0 "작업자의 코드 편집 허용"            "{\"tool_name\":\"Edit\",\"cwd\":\"$WK\",\"tool_input\":{\"file_path\":\"$WK/src/a.ts\"}}"
+guardw 2 "작업자(워크트리)의 PLAN 편집 거부"  "{\"tool_name\":\"Edit\",\"cwd\":\"$WK\",\"tool_input\":{\"file_path\":\"$WK/docs/PLAN.md\"}}"
+guardw 2 "작업자의 CLAUDE.md 편집 거부"       "{\"tool_name\":\"Edit\",\"cwd\":\"$WK\",\"tool_input\":{\"file_path\":\"$WK/CLAUDE.md\"}}"
+guardw 0 "작업자의 ARCH 편집 허용"            "{\"tool_name\":\"Edit\",\"cwd\":\"$WK\",\"tool_input\":{\"file_path\":\"$WK/docs/ARCH.md\"}}"
+guardw 0 "작업자의 코드 편집 허용"            "{\"tool_name\":\"Edit\",\"cwd\":\"$WK\",\"tool_input\":{\"file_path\":\"$WK/src/a.ts\"}}"
+guardw 2 "작업자: cwd 가 하위 폴더여도 PLAN 편집 거부" "{\"tool_name\":\"Edit\",\"cwd\":\"$WK/src\",\"tool_input\":{\"file_path\":\"$WK/docs/PLAN.md\"}}"
 guard 0 "프로젝트 밖 파일은 관여 안 함"      "{\"tool_name\":\"Write\",\"cwd\":\"$WT\",\"tool_input\":{\"file_path\":\"$WT/../elsewhere/NOTES.md\"}}"
 guard 2 "git commit --no-verify 거부"        "{\"tool_name\":\"Bash\",\"cwd\":\"$WT\",\"tool_input\":{\"command\":\"git commit -m x --no-verify\"}}"
 guard 2 "git commit -n 거부"                 "{\"tool_name\":\"Bash\",\"cwd\":\"$WT\",\"tool_input\":{\"command\":\"git commit -n -m x\"}}"

@@ -4,7 +4,8 @@
 // 판정 기준은 docs/README.md 2절(구조)과 3절(역할)이다.
 
 import { readFileSync, existsSync } from "node:fs";
-import { resolve, relative, isAbsolute } from "node:path";
+import { resolve, relative, isAbsolute, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const ROOT_ALLOW = ["README.md", "CLAUDE.md", "AGENTS.md", "LICENSE.md"];
 const DOCS_ALLOW = ["README.md", "BRIEF.md", "ARCH.md", "PLAN.md", "testing.md", "decisions.md"];
@@ -17,7 +18,9 @@ try { input = JSON.parse(readFileSync(0, "utf8") || "{}"); } catch { process.exi
 const tool = input.tool_name ?? "";
 const ti = input.tool_input ?? {};
 const cwd = resolve(input.cwd ?? process.cwd());
-const isWorker = /[\\/]\.claude[\\/]worktrees[\\/]/.test(cwd + "/");
+// 저장소 루트: 훅이 주는 CLAUDE_PROJECT_DIR, 없으면 이 스크립트가 설치된 <루트>/scripts/ 의 루트. 세션의 작업 폴더(cwd)는 하위 폴더일 수 있어 믿지 않는다.
+const root = resolve(process.env.CLAUDE_PROJECT_DIR ?? resolve(dirname(fileURLToPath(import.meta.url)), ".."));
+const isWorker = /[\\/]\.claude[\\/]worktrees[\\/]/.test(root + "/") || /[\\/]\.claude[\\/]worktrees[\\/]/.test(cwd + "/");
 
 if (tool === "Bash") {
   const cmd = String(ti.command ?? "");
@@ -31,7 +34,7 @@ if (!["Write", "Edit", "MultiEdit", "NotebookEdit"].includes(tool)) process.exit
 const fp = ti.file_path ?? ti.notebook_path;
 if (!fp) process.exit(0);
 const abs = isAbsolute(fp) ? resolve(fp) : resolve(cwd, fp);
-const rel = relative(cwd, abs).split("\\").join("/");
+const rel = relative(root, abs).split("\\").join("/");
 if (!rel || rel.startsWith("..") || isAbsolute(rel)) process.exit(0); // 프로젝트 밖은 관여하지 않는다
 
 if (rel === ".docs-budget.json") deny("예산 파일은 사람이 고친다. 예산을 올리지 말고 문서를 줄인다.");
