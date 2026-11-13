@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# docs-convention 스킬의 검사기와 훅이 실제로 막는지 확인한다.
-# 사용: bash skills/docs-convention/tests/selftest.sh   (Git Bash / bash, node, git 필요)
+# ledger 스킬의 검사기와 훅이 실제로 막는지 확인한다.
+# 사용: bash skills/ledger/tests/selftest.sh   (Git Bash / bash, node, git 필요)
 set -u
 SKILL="$(cd "$(dirname "$0")/.." && pwd)"
 CHECK="$SKILL/scripts/check-docs.mjs"
