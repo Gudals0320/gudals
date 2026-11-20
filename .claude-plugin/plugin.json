@@ -5,13 +5,5 @@
     "name": "Gudals0320"
   },
   "repository": "https://github.com/Gudals0320/gudals",
-  "types": "./types/index.d.ts",
-  "userConfig": {
-    "transpromptModel": {
-      "type": "string",
-      "title": "transprompt: 구조화 모델",
-      "description": "구조화에 쓸 모델 (별칭 또는 전체 모델 ID).",
-      "default": "sonnet"
-    }
-  }
+  "types": "./types/index.d.ts"
 }

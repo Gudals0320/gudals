@@ -227,7 +227,7 @@ export async function readLocal($: Engine): Promise<Map<string, LocalInfo> | und
 // `isBlocked`: the session said its work stops there until the person answers.
 export type Choice = { ask: string; recap: string; options: string[]; messages: string[]; isBlocked: boolean }
 
-// A prompt a hook dropped (transprompt holding a prompt for approval, say): the session waits on
+// A prompt a hook dropped (holding a prompt for approval, say): the session waits on
 // the person until a prompt of theirs goes through.
 export type Block = { blocked: string }
 

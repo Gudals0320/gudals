@@ -8,7 +8,7 @@ export type MonitorState = 'working' | 'background' | 'waiting' | 'idle'
 // report, MonitorRow.report); `reply`: the last answer asks something (the board shows it as a
 // report too); `app`: the engine or
 // the app reports the session waiting on the person; `blocked`: a hook dropped the person's prompt
-// (transprompt holding it for approval), and nothing of theirs has gone through since.
+// (holding it for approval, say), and nothing of theirs has gone through since.
 export type MonitorWaitKind = 'question' | 'choice' | 'reply' | 'app' | 'blocked'
 
 // What the monitor read from one session's recent transcript.
